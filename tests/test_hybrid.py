@@ -256,7 +256,7 @@ class PreservationTests(unittest.TestCase):
             wb.save(source)
             api = MagicMock()
             api.lookup.return_value = Logo(png(), source='https://target.com/logo.png', status='REVIEW_REQUIRED', method='header_logo')
-            counts = build_logo_bank(source, output, fetcher=api)
+            counts = build_logo_bank(source, output, compact=False, fetcher=api)
             self.assertEqual(counts, {'REVIEW_REQUIRED': 1, 'ALREADY_PRESENT': 1})
             result = load_workbook(output)
             ws = result['Logos']

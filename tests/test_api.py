@@ -175,7 +175,7 @@ class APITests(unittest.TestCase):
             for index, (name, domain) in enumerate(FIVE):
                 ws.append([name, domain if index % 2 == 0 else ''])
             wb.save(source)
-            counts = build_logo_bank(source, output, fetcher=LogoAPI(transport))
+            counts = build_logo_bank(source, output, compact=False, fetcher=LogoAPI(transport))
             self.assertEqual(counts, {'REVIEW_REQUIRED': 5})
             result = load_workbook(output)
             ws = result['Logos']

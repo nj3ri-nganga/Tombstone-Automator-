@@ -1,8 +1,16 @@
-# TAG Logo Bank — hybrid recovery
+# TAG Logo Bank — three-column logo sheet
 
-Fill empty company logo cells using an optional LogoAPI.sh lookup, then the
-company's verified official website. Preserve the source workbook and existing
-Logos rows, notes, statuses, original logos and occupied Current Logo cells.
+The default visible Logos sheet has exactly **Company | Website | Logo**.
+Every row, including the header and rows without a logo, is **72 points high**.
+Logos are centered in their cells and fit proportionally within 180 × 75 pixels.
+The original input file is never overwritten.
+
+Retrieval still uses optional LogoAPI.sh followed by verified official websites.
+Detailed statuses and source URLs are written to `OUTPUT_STEM.logo-audit.json`,
+not extra columns. If an existing Logos sheet contains notes, original logos or
+other extra columns, its full information is retained in a hidden `Logo Details`
+sheet. Other transaction sheets are preserved. Existing current logos are reused
+and resized for the uniform visible grid, not fetched again.
 
 ```powershell
 python -m pip install -e .
@@ -71,12 +79,12 @@ active sheet. Common Company/Company Name/Target headers and Website/Company
 Website/URL headers are recognized. Use `--sheet`, `--header-row` and `--pair` for
 other layouts, as before. A Logos sheet can be processed directly.
 
-Existing Logos rows are never deleted or reordered. `Current Logo` is filled
+Company rows remain in their original order in the three-column view. `Current Logo` is filled
 when empty; legacy `Logo` is accepted if there is no Current Logo column. Existing
-images, formulas/text and manually entered URLs in that cell are left alone.
-Original logo columns and analyst information are untouched. Retrieval results
-use separate `Latest ...` fields on existing sheets so prior notes/statuses and
-provenance are not overwritten. Each retry updates those latest-attempt fields;
+logo content is reused; copied images are resized and centered in the uniform view.
+Original logo columns and analyst information are retained in the hidden details
+sheet for rich inputs. Retrieval results use separate `Latest ...` fields in the
+details/audit data so prior notes/statuses and provenance are not overwritten. Each retry updates those latest-attempt fields;
 existing occupied logo rows are skipped. Existing sheet information is preserved
 within openpyxl's supported feature set; unsupported complex Excel objects can
 still have its normal round-trip limitations.
@@ -86,10 +94,10 @@ matched by company/domain and new companies are appended, without rebuilding the
 sheet. Input and output filenames must differ. Workbook output is atomic.
 
 New embedded images have explicit row/column anchors, padding, preserved aspect
-ratio and sufficient row height. Existing row heights are never shrunk. Downloaded
+ratio and sufficient row height. All visible rows are normalized to 72 points; original rich-sheet formatting stays in the hidden details sheet. Downloaded
 PNGs (or raster/SVG assets normalized to PNG) are saved in OUTPUT_STEM_logos.
 Retrieval method, asset URL, official page URL, status, notes, dimensions, embedded
-SHA256, local file and retry-after timestamp are recorded. No mock or placeholder
+SHA256, local file and retry-after timestamp are recorded in the separate JSON audit. No mock or placeholder
 artwork is inserted in live runs.
 
 ## Caching, backoff and resume

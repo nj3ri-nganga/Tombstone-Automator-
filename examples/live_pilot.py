@@ -29,13 +29,14 @@ def main():
     counts = build_logo_bank(source, output, use_api=False, max_wait=1)
     wb = load_workbook(output)
     ws = wb['Logos']
-    headers = {c.value: c.column for c in ws[1]}
+    audit = json.loads(output.with_suffix('.logo-audit.json').read_text(encoding='utf-8'))
+    records = {item['row']: item['cells'] for item in audit['rows']}
     images = {image_cell(i)[0]: i for i in ws._images}
     report = []
     canvas = Image.new('RGB', (1000, 15 * 125), '#eeeeee')
     draw = ImageDraw.Draw(canvas)
     for row, (name, website) in enumerate(companies, 2):
-        get = lambda key: ws.cell(row, headers[key]).value
+        get = lambda key: records[row].get(key)
         current = images.get(row)
         item = {'company': name, 'website': website, 'status': get('Latest Retrieval Status'),
                 'method': get('Retrieval Method'), 'source': get('Latest Retrieval Source'),
