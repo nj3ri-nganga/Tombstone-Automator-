@@ -96,6 +96,8 @@ class Logo:
     sha256: str = ''
     downloaded_png: bytes | None = None
     domain: str = ''
+    method: str = ''
+    retry_at: float = 0
 
 
 def manual_approval(data, approval):
@@ -137,5 +139,11 @@ def find_logo(website='', fetcher=None, local=None, *, company='', approval=None
             return Logo(status='ERROR', detail=f'local asset {local}: {type(error).__name__}: {error}')
     if approval is not None:
         return Logo(status='ERROR', detail='Manual approval requires a local logo_path; no API request attempted')
-    from .api import LogoAPI
-    return (fetcher or LogoAPI()).lookup(company, website)
+    if fetcher is None:
+        from .hybrid import Hybrid
+        fetcher = Hybrid()
+        try:
+            return fetcher.lookup(company, website)
+        finally:
+            fetcher.close()
+    return fetcher.lookup(company, website)

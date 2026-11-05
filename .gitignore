@@ -26,8 +26,11 @@ dist/
 work/
 output/
 logos/
+.tag-logo-cache/
+pilot-output/
 .env
 .env.*
 *.log
 *.tmp
 ~$*
+

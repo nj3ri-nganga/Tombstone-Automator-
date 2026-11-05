@@ -1,151 +1,175 @@
-# TAG Logo Bank
+# TAG Logo Bank — hybrid recovery
 
-Read companies from Excel, retrieve their catalog logos through LogoAPI.sh, and
-save a workbook with neatly aligned PNGs plus a local folder of downloaded logos.
-No website scraping, API key, Cairo, GTK, browser automation or SVG conversion.
-
-## Run
-
-Requires Python 3.10+ (including Windows/Python 3.14) and ordinary Python packages.
-From this repository, install once with `python -m pip install -e .`, then:
+Fill empty company logo cells using an optional LogoAPI.sh lookup, then the
+company's verified official website. Preserve the source workbook and existing
+Logos rows, notes, statuses, original logos and occupied Current Logo cells.
 
 ```powershell
-python -m tag_logo_bank transactions.xlsx transactions_with_logos.xlsx
+python -m pip install -e .
+python -m tag_logo_bank input.xlsx enriched.xlsx
 ```
 
-Input defaults to the `Transactions` sheet and the `Company` and `Website` headers.
-A website can be a URL, domain, Excel hyperlink or blank. If the Website column is
-absent, the application searches by company name. Output:
-
-- `transactions_with_logos.xlsx`: original transaction sheets plus a rebuilt
-  `Logos` sheet with one row per unique company/website, status and retrieval notes.
-- `transactions_with_logos_logos/`: validated downloaded PNGs at their original
-  resolution. The `Local PNG` column records each file's absolute path. Files have
-  safe domain/name plus content-hash filenames; no company name becomes a path.
-
-Each logo stays inside its company's row with padding and its original proportions.
-Failed/uncertain rows have empty logo cells and a yellow highlight. A summary of
-statuses and output paths prints when the command finishes. A completed command
-can contain flagged rows: inspect the status counts and workbook.
-
-The source workbook is never overwritten. Rerunning rebuilds the Logos sheet,
-without reusing stale images for companies that now fail. Other sheets, hyperlinks,
-custom column pairs, freeze panes, filters, formula-as-literal protection in the
-Logos sheet and atomic workbook saves are retained. Complex Excel features beyond
-openpyxl's support may not round-trip; `.xlsx` is the supported file format.
-
-## How matches and images are checked
-
-The website's hostname is used for API lookup (lowercase, IDNA-normalized, `www.`
-removed). Tracking parameters/fragments are removed from stored website URLs.
-Other subdomains remain exact; the application never guesses a parent/acquirer
-domain. For a portal URL, supply the company's verified main website if necessary.
-
-Before downloading, a catalog search must return a matching name, domain and
-source-domain provenance. Case, punctuation, whitespace and ordinary legal suffixes
-such as Inc./Corporation are normalized; divisions, Group and Holdings are not
-silently discarded. With no website, only one unique, exact, non-fuzzy name match
-with consistent domain/source metadata is accepted. Ambiguous, fuzzy, mismatched
-or malformed results are flagged rather than choosing the first search hit.
-This verifies agreement of provider metadata, not legal-entity ownership; an exact
-name in a third-party catalog is not independent identity or brand approval. Use a
-verified website when names are ambiguous.
-
-The application requests `/{domain}.png?size=1024&fallback=404`, prefers the normal
-logo/wordmark endpoint and accepts a genuine catalog mark when no wordmark exists.
-Generated tiles, favicon/monogram fallbacks and any nonempty `X-Logo-Fallback`
-response are rejected. PNG Content-Type, signature, decoding, dimensions, pixel
-limits and visibility are checked. SVG/HTML/error bodies are never converted or
-embedded. The PNG archive keeps original downloaded pixels; embedded previews are
-normalized to at most 600 × 300 and displayed within 180 × 75 pixels. All automatic
-matches retain `REVIEW_REQUIRED`; confirm brand identity before transaction use.
-
-Network requests go only to the fixed `https://logoapi.sh` origin, including on
-redirects, with TLS verification, bounded retries, connect/read timeouts and an
-8 MB response limit. IP/private website inputs are rejected; API DNS and redirects
-are checked. No company site is fetched, including Adobe's restricted website.
-As before, DNS checks alone are not protection against DNS rebinding; use network
-egress controls in hosted environments. Provider failures (404, rate limits,
-network errors or outages) leave cells empty and give actionable status notes.
-The service must honor its documented no-fallback behavior and catalog accuracy;
-this tool cannot prove the identity of arbitrary pixels returned by a provider.
-
-### LogoAPI.sh evaluation
-
-[Official API documentation](https://logoapi.sh/docs), checked November 5, 2026:
-domain lookup, company-name search and server-rendered PNGs work without a key or
-account. Download caching is supported; the free service has usage limits and no
-client software installation requirement. Its default miss behavior can produce
-favicons or generated wordmark tiles, which is why TAG explicitly requests 404 on
-misses and also checks fallback headers and catalog metadata. The application
-uses the provider's default brand colors, never generated color variants.
-
-Only requested company names/domains are sent to LogoAPI.sh, not the workbook or
-other transaction fields. Catalog coverage, current brand files and service
-availability remain external dependencies. There is no second-provider or website
-scraping fallback that might silently select a different company.
-
-## Options you may already use
+No Cairo, GTK, browser or separate system runtime is required. PNG, JPEG and WebP
+are supported directly. Optional SVG support uses a prebuilt Python-package wheel:
 
 ```powershell
-python -m tag_logo_bank input.xlsx output.xlsx --sheet Deals --header-row 2 --pair "Target:Target Website" --pair "Buyer:Buyer Website"
-python -m tag_logo_bank input.xlsx output.xlsx --pair "Company:" --logos-dir downloaded_logos
+python -m pip install --only-binary=resvg_py -e ".[svg]"
 ```
 
-`--overrides overrides.json` still accepts verified websites or optional local
-raster assets, with case-insensitive company names and paths relative to the JSON:
+This is **not a pure-Python SVG renderer**: resvg_py packages a Rust renderer in
+its wheel. It avoids separately installed native libraries. If no wheel is
+available, leave SVG support off rather than building/installing a system stack;
+the tool continues trying raster candidates. Before conversion a bounded XML/CSS
+subset rejects scripts, events, entities/internal subsets, external resources,
+embedded images, unknown DTDs and cyclic/expanding references. Safe presentation
+CSS is expanded; comments and the recognized SVG 1.1 public DOCTYPE are removed
+without fetching a DTD. System fonts are disabled. Unsupported SVG is a diagnostic
+failure, never silently accepted. The existing strict preflight is reused rather
+than implementing a new renderer.
+
+## Sources and identity
+
+1. LogoAPI.sh is enabled by default; `--no-api` skips it. Its PNG requests still
+   disable and reject favicon/generated-tile fallbacks. A catalog miss, mismatch,
+   error or rate limit proceeds to the verified website.
+2. Official-page discovery considers matching organization schema, header/nav
+   branding, lazy/responsive logo images, official logo image links, inline SVG
+   and logo-like Open Graph assets. Generic OG photos, site icons and partner/
+   carrier logo galleries are not accepted as company logos. Asset CDNs are
+   allowed only when referenced by the identity-checked official page.
+3. Optional `--web-search` uses Brave's web API, not image search. It requires
+   `BRAVE_SEARCH_API_KEY`. Candidates must be inside the supplied official domain
+   or explicit `--search-domains`, have a matching search title, then pass the
+   same official-page identity checks. Multiple plausible domains are flagged.
+   No image-host/aggregator fallback or automatically trusted search hit exists.
+
+Supply websites you have verified belong to the target. Default page redirects
+must stay on the same company domain (www/non-www are equivalent). A redirect to
+an acquirer, an acquisition article with acquirer site branding, or a new brand
+without the target identity is flagged. Do not change this just to improve counts.
+This deliberately fails some defunct/rebranded targets instead of inserting the
+acquirer's logo. No Internet Archive crawling or transaction-date authenticity is
+claimed. A recovered target asset still needs human historical/brand approval.
+
+If you independently verify alternative names of the *same target*, optional
+`identity_names` in that company's override can list those names. They are
+recorded in retrieval notes. This is an explicit reviewer decision, not a way to
+silently equate an acquired target with its parent. For historical requirements,
+use an authorized, verified target PNG via `logo_path` when no official asset is
+available. Old raster overrides and optional hash-bound approvals still work.
+
+All automatic images remain `REVIEW_REQUIRED`. Other statuses include
+`MATCH_UNCERTAIN`, `NOT_FOUND`, `NEEDS_WEBSITE`, `ERROR`, `RATE_LIMITED`,
+`ALREADY_PRESENT`, `MANUAL_REVIEW` and `MANUAL_APPROVED`. Empty/uncertain rows stay
+empty. Technical and metadata checks cannot independently prove the contents of
+arbitrary pixels or that a current logo was valid on a historical deal date.
+
+## Workbook preservation
+
+The default source is an existing `Logos` sheet, otherwise `Transactions` or the
+active sheet. Common Company/Company Name/Target headers and Website/Company
+Website/URL headers are recognized. Use `--sheet`, `--header-row` and `--pair` for
+other layouts, as before. A Logos sheet can be processed directly.
+
+Existing Logos rows are never deleted or reordered. `Current Logo` is filled
+when empty; legacy `Logo` is accepted if there is no Current Logo column. Existing
+images, formulas/text and manually entered URLs in that cell are left alone.
+Original logo columns and analyst information are untouched. Retrieval results
+use separate `Latest ...` fields on existing sheets so prior notes/statuses and
+provenance are not overwritten. Each retry updates those latest-attempt fields;
+existing occupied logo rows are skipped. Existing sheet information is preserved
+within openpyxl's supported feature set; unsupported complex Excel objects can
+still have its normal round-trip limitations.
+
+When importing from another sheet into an existing Logos sheet, existing rows are
+matched by company/domain and new companies are appended, without rebuilding the
+sheet. Input and output filenames must differ. Workbook output is atomic.
+
+New embedded images have explicit row/column anchors, padding, preserved aspect
+ratio and sufficient row height. Existing row heights are never shrunk. Downloaded
+PNGs (or raster/SVG assets normalized to PNG) are saved in OUTPUT_STEM_logos.
+Retrieval method, asset URL, official page URL, status, notes, dimensions, embedded
+SHA256, local file and retry-after timestamp are recorded. No mock or placeholder
+artwork is inserted in live runs.
+
+## Caching, backoff and resume
+
+The default `.tag-logo-cache/` beside the output holds private local SQLite state:
+HTTP bytes/provenance, successful company results (24 hours), short negative
+results (10 minutes), and per-host 429 cooldowns. Repeated company/domain/URL work
+is avoided, including after restarting. Company cache keys include website path,
+verified aliases and source/search policy so historical subpages and changed
+identity decisions do not accidentally share results. SQLite commits happen as
+each response/result completes, so interrupted runs can reuse completed work.
+
+429 honors numeric or HTTP-date Retry-After, or exponential backoff when absent.
+Short waits retry at most twice; waits beyond `--max-wait` (default 2 seconds) are
+recorded as deferred instead of blocking the whole workbook. Other domains can
+continue. `RATE_LIMITED` results are not negative-cached. Rerun the command after
+the recorded deadline, using the last output workbook to preserve filled cells,
+or the original input to regenerate empty cells from the response/logo cache.
+`--refresh` bypasses cached responses/results but **does not bypass cooldowns**.
+
+Requests use TLS verification, connect/read timeouts, response/pixel caps, public
+address checks and redirect validation. API/search credentials stay on HTTPS
+provider origins; all page redirects are rechecked. No authentication/403 bypass,
+proxy removal or user-agent rotation is attempted. As before, use network egress
+controls where DNS rebinding is a concern. A website is not accessed merely
+because a search result says it is official; domain scope must be verified first.
+
+The cache and downloaded files may contain company names and URLs. Keep them
+local; `.gitignore` excludes them, all workbooks and image outputs. Never commit
+private TAG transaction inputs or source screenshots.
+
+## Examples
+
+```powershell
+python -m tag_logo_bank tag.xlsx tag_enriched.xlsx --sheet Logos --limit 15
+python -m tag_logo_bank tag.xlsx tag_enriched.xlsx --no-api --cache-dir .tag-logo-cache
+python -m tag_logo_bank input.xlsx output.xlsx --sheet Deals --pair "Target:Target Website" --pair "Buyer:Buyer Website"
+python -m tag_logo_bank input.xlsx output.xlsx --web-search --search-domains verified-target.com
+```
+
+`--overrides overrides.json` remains optional. Paths are relative to the JSON,
+including Windows paths with spaces; UTF-8 BOM is supported. Example schema:
 
 ```json
 {
-  "Adobe": {"website": "https://www.adobe.com/"},
-  "Your Company": {"logo_path": "logos/verified-official.png"}
+  "Verified Company": {
+    "website": "https://verified-target.com",
+    "identity_names": ["Verified Company Legal Name"]
+  }
 }
 ```
 
-Overrides are optional. A local PNG/JPEG/WebP skips the API and stays
-`MANUAL_REVIEW`; invalid files produce `ERROR` without an online fallback. Existing
-optional `approval` records still work with exactly `sha256` (original-file hash),
-`reviewed_by`, `reviewed_on` (YYYY-MM-DD), and `source_url`, producing
-`MANUAL_APPROVED` only for a matching validated local file. Approval is a human
-attestation; it is never required for the ordinary API command. SVG overrides are
-no longer accepted: use an existing official raster file rather than installing a
-conversion stack. UTF-8 BOM override JSON from Windows remains supported.
+`logo_path` accepts a verified local raster instead; optional `approval` keeps the
+existing sha256/reviewed_by/reviewed_on/source_url format. Nothing in the normal
+hybrid command requires manually converting SVG or approving an override.
 
-Statuses: `REVIEW_REQUIRED` (matched API PNG), `MATCH_UNCERTAIN` (empty), `NOT_FOUND`
-(empty), `ERROR` (empty), `MANUAL_REVIEW`, and `MANUAL_APPROVED`. No placeholders
-are generated. Partial failures do not stop other companies.
-
-## Tests and the five-company live check
-
-All regression tests run offline with the application's dependencies:
+## Public 15-company pilot and tests
 
 ```powershell
 python -m unittest discover -s tests -v
+python examples/live_pilot.py pilot-output
 ```
 
-Tests cover Microsoft, Apple, NVIDIA, Salesforce and Adobe through mocked provider
-responses, both domain and name lookup, plus workbook image anchors/proportions,
-local files, missing-logo gaps, uncertainty, blocked fallbacks, PNG validation,
-network restrictions, errors, overrides, source preservation and reruns. Synthetic
-colored geometry is only test data; it is never shipped as company artwork.
+The live script contains only the 15 user-selected public company names/domains,
+not transaction amounts, dates, analyst notes or private TAG data. It performs
+real official-site retrieval (`use_api=False`), writes a public workbook with
+Current Logo in column C, verifies embedded row coordinates, and creates
+`report.json` and `contact-sheet.png` for visual identity review. It does not use
+mock routes or generate company artwork. Failures remain blank and are reported;
+a successful script exit does not imply all 15 logos were found or approved.
 
-To run the real five-company check locally:
+GitHub Actions installs ordinary Python packages plus the optional prebuilt SVG
+wheel, runs offline tests on Windows/Python 3.14 and Linux/Python 3.12, then runs
+the public pilot on each runner. Seven-day artifacts include only public pilot
+report, contact sheet, workbook and recovered PNGs; private caches are excluded.
+Native SVG and HTML discovery tests can be skipped locally if optional packages
+are unavailable, but run with real installed dependencies in CI.
 
-```powershell
-python examples/create_sample.py
-python -m tag_logo_bank examples/five_companies.xlsx examples/five_companies_with_logos.xlsx
-```
-
-The first command creates only the input companies/websites, not logo artwork.
-Review all five output rows and downloaded PNGs for identity, fidelity and desktop
-Excel placement. Clear one Website value and rerun to exercise real name search.
-No API key or extra system installation is needed. CI runs the offline suite on
-Windows/Python 3.14 and Linux/Python 3.12.
-
-Validation in this Codex runtime: the offline suite passed. The runtime's proxy at
-`proxy:8080` is unreachable (curl exit 7 / HTTP 000), so real API search/download
-and the live five-company workbook could not be tested. The documentation was
-read through the web connector; live search endpoints were also inaccessible
-through that connector. No failed live workbook was generated. Actual provider
-response compatibility/coverage and Windows Excel rendering still need the local
-check above.
+HUB International, XPT Specialty, Bankwell and NFP use their named public sites.
+King Insurance uses king-insurance.com, which currently presents King Risk
+Partners: a different current brand is not automatically approved as the
+historical King Insurance logo. The remaining ten domains are exactly those
+supplied by the user. Redirect/rebrand cases are reported rather than relabeled.

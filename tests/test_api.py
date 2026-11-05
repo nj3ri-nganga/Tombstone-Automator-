@@ -111,7 +111,7 @@ class APITests(unittest.TestCase):
                 self.assertFalse(result.png)
 
     def test_http_404_429_403_and_network_errors(self):
-        for code, expected in [(404, 'NOT_FOUND'), (429, 'ERROR'), (403, 'ERROR'), (503, 'ERROR')]:
+        for code, expected in [(404, 'NOT_FOUND'), (429, 'RATE_LIMITED'), (403, 'ERROR'), (503, 'ERROR')]:
             response = requests.Response()
             response.status_code = code
             transport = MagicMock()

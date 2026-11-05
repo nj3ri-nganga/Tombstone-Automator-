@@ -118,7 +118,7 @@ class WorkbookTests(unittest.TestCase):
                 build_logo_bank(output, second)
             result = load_workbook(second)
             self.assertEqual(result.sheetnames.count('Logos'), 1)
-            self.assertEqual(len(result['Logos']._images), 0)  # Never reuse stale logos.
+            self.assertEqual(len(result['Logos']._images), 3)  # Preserve the user's existing logo cells/images.
             result.close()
             with self.assertRaisesRegex(ValueError, 'separate'):
                 build_logo_bank(source, source)

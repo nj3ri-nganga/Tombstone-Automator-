@@ -1,4 +1,5 @@
 openpyxl>=3.1,<4
 requests>=2.32,<3
 Pillow>=10.4,<14
+beautifulsoup4>=4.12,<5
 
