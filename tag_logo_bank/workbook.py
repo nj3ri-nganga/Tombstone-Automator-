@@ -7,9 +7,12 @@ import tempfile
 
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image
+from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+from openpyxl.drawing.xdr import XDRPositiveSize2D
+from openpyxl.utils.units import pixels_to_EMU, pixels_to_points
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .logos import Fetcher, find_logo
+from .logos import Fetcher, find_logo, normalize_site
 
 
 def text(cell):
@@ -38,6 +41,11 @@ def extract_companies(sheet, pairs, header_row=1):
             if site_col:
                 cell = row[headers[site_col.casefold()] - 1]
                 site = cell.hyperlink.target if cell.hyperlink and cell.hyperlink.target else text(cell)
+                if site:
+                    try:
+                        site = normalize_site(site)
+                    except ValueError:
+                        pass
             key = (name.casefold(), site.rstrip('/').casefold())
             companies.setdefault(key, (name, site))
     return list(companies.values())
@@ -68,6 +76,11 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
         for name, website in companies:
             override = overrides.get(name.casefold(), {})
             site = override.get('website', website)
+            if site:
+                try:
+                    site = normalize_site(site)
+                except ValueError:
+                    pass  # find_logo reports invalid websites without aborting the workbook.
             local = Path(override['logo_path']) if override.get('logo_path') else None
             result = find_logo(site, fetcher, local)
             counts[result.status] = counts.get(result.status, 0) + 1
@@ -85,8 +98,12 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
                 ratio = min(180 / image.width, 75 / image.height, 1)
                 image.width *= ratio
                 image.height *= ratio
-                ws.add_image(image, f'C{row}')
-            ws.row_dimensions[row].height = 68
+                image.anchor = OneCellAnchor(
+                    _from=AnchorMarker(col=2, row=row - 1,
+                                       colOff=pixels_to_EMU(8), rowOff=pixels_to_EMU(8)),
+                    ext=XDRPositiveSize2D(pixels_to_EMU(image.width), pixels_to_EMU(image.height)))
+                ws.add_image(image)
+            ws.row_dimensions[row].height = pixels_to_points(96)
         for cell in ws[1]:
             cell.fill = PatternFill('solid', fgColor='17365D')
             cell.font = Font(color='FFFFFF', bold=True)
@@ -105,3 +122,4 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
         return counts
     finally:
         wb.close()
+

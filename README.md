@@ -85,3 +85,47 @@ pyproject.toml
 requirements.txt
 requirements-dev.txt
 ```
+
+
+### Discovery and diagnostics
+
+Discovery includes organization JSON-LD, logo images with lazy-loading and
+picture/srcset variants, and self-contained header/navigation SVGs. Organization
+schema logos retain priority; within each tier the largest validated original
+image wins. Favicons are a last resort. Every discovered asset still requires
+brand review. No substitute or placeholder company artwork is generated.
+
+SVG conversion is optional: `python -m pip install -e ".[svg]"`. CairoSVG also
+requires a working native Cairo runtime, particularly on Windows. Unsupported
+SVGs or unavailable conversion are recorded in candidate diagnostics and raster
+fallbacks are still attempted. SVG declarations/entities, script, CSS styles,
+embedded images and external references are rejected. The renderer also blocks
+resource fetching and bounds output dimensions. Existing URL, redirect, download
+size and raster validation checks remain active.
+
+Website URLs in the Logos sheet omit fragments and common tracking parameters
+(`utm_*`, click IDs and Mailchimp IDs), retaining functional query parameters.
+Failure notes include the stage, candidate URL and exception type/message.
+Successful fallbacks also retain rejected-candidate diagnostics. Manual overrides
+and MANUAL_REVIEW / REVIEW_REQUIRED / NOT_FOUND / ERROR statuses are preserved.
+
+### Offline regression checks and local live validation
+
+Install development dependencies, then run `python -m pytest -q`. The additional
+regressions can also run with `python -m unittest discover -s tests -p test_regressions.py -v`.
+They use synthetic geometry solely as test fixtures, not substitute company logos.
+The SVG renderer unit test mocks conversion; it verifies the dimension bounds and
+blocked fetch callback, not native Cairo rendering.
+
+The Codex runtime used for this change lacks BeautifulSoup, pytest and CairoSVG.
+Nine new unittest regressions passed offline; the discovery test was skipped
+because BeautifulSoup was unavailable. The pre-existing pytest suite and real SVG
+conversion could not run here. No live logo retrieval was attempted.
+
+On Windows/Python 3.14, install the normal/dev dependencies (and optionally the svg
+extra plus Cairo), run the complete pytest suite, then repeat the real Microsoft,
+Apple, NVIDIA, Salesforce and Adobe test. Confirm logo identity and resolution,
+review all failure notes (especially Adobe), and open the workbook in desktop
+Excel to confirm that Salesforce stays in its row when NVIDIA has no image.
+Actual site availability, current markup, native SVG conversion and desktop Excel
+rendering require this local validation.
