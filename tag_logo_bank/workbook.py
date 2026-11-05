@@ -4,6 +4,8 @@ from io import BytesIO
 from pathlib import Path
 import os
 import tempfile
+import hashlib
+import re
 
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image
@@ -12,7 +14,24 @@ from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU, pixels_to_points
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from .logos import Fetcher, find_logo, normalize_site
+from .logos import find_logo, normalize_site
+from .api import LogoAPI
+
+
+def save_png(directory, name, result):
+    """Keep the original downloaded PNG, with a safe content-addressed filename."""
+    data = result.downloaded_png or result.png
+    label = re.sub(r'[^a-z0-9.-]+', '-', (result.domain or name).casefold()).strip('.-')[:60] or 'logo'
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / f'{label}-{hashlib.sha256(data).hexdigest()}.png'
+    fd, temporary = tempfile.mkstemp(suffix='.tmp', dir=directory)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return str(destination.resolve())
 
 
 def text(cell):
@@ -52,8 +71,9 @@ def extract_companies(sheet, pairs, header_row=1):
 
 
 def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_row=1,
-                    overrides=None, fetcher=None):
+                    overrides=None, fetcher=None, logos_dir=None):
     source, output = Path(source), Path(output)
+    logos_dir = Path(logos_dir) if logos_dir is not None else output.parent / f'{output.stem}_logos'
     if source.resolve() == output.resolve():
         raise ValueError('Choose a separate output file to preserve the source')
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx':
@@ -64,14 +84,17 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
     try:
         if sheet not in wb:
             raise ValueError(f'Worksheet not found: {sheet}')
-        companies = extract_companies(wb[sheet], pairs or [('Company', 'Website')], header_row)
+        if pairs is None:
+            has_website = any(text(cell).casefold() == 'website' for cell in wb[sheet][header_row])
+            pairs = [('Company', 'Website' if has_website else '')]
+        companies = extract_companies(wb[sheet], pairs, header_row)
         if 'Logos' in wb:
             del wb['Logos']
         ws = wb.create_sheet('Logos')
         ws.append(['Company', 'Website', 'Logo', 'Status', 'Source', 'Official page',
-                   'Retrieved UTC', 'Original dimensions', 'SHA256 (embedded PNG)', 'Verification / notes'])
+                   'Retrieved UTC', 'Original dimensions', 'SHA256 (embedded PNG)', 'Verification / notes', 'Local PNG'])
         overrides = {k.casefold(): v for k, v in (overrides or {}).items()}
-        fetcher = fetcher or Fetcher()
+        fetcher = fetcher or LogoAPI()
         counts = {}
         for name, website in companies:
             override = overrides.get(name.casefold(), {})
@@ -83,14 +106,22 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
                     pass  # find_logo reports invalid websites without aborting the workbook.
             local = Path(override['logo_path']) if override.get('logo_path') else None
             if 'approval' in override:
-                result = find_logo(site, fetcher, local, approval=override['approval'])
+                result = find_logo(site, fetcher, local, company=name, approval=override['approval'])
             else:
-                result = find_logo(site, fetcher, local)
+                result = find_logo(site, fetcher, local, company=name)
+            saved = ''
+            if result.png:
+                try:
+                    saved = save_png(logos_dir, name, result)
+                except OSError as error:
+                    result.png = None
+                    result.status = 'ERROR'
+                    result.detail = f'Local PNG save: {type(error).__name__}: {error}'
             counts[result.status] = counts.get(result.status, 0) + 1
             ws.append([name, site, '', result.status, result.source, result.page,
                        datetime.now(timezone.utc).isoformat(timespec='seconds'),
                        f'{result.width} x {result.height}' if result.png else '',
-                       result.sha256, result.detail[:32000]])
+                       result.sha256, result.detail[:32000], saved])
             row = ws.max_row
             for cell in ws[row]:
                 if isinstance(cell.value, str):
@@ -107,10 +138,13 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
                     ext=XDRPositiveSize2D(pixels_to_EMU(image.width), pixels_to_EMU(image.height)))
                 ws.add_image(image)
             ws.row_dimensions[row].height = pixels_to_points(96)
+            if not result.png:
+                for cell in ws[row]:
+                    cell.fill = PatternFill('solid', fgColor='FFF2CC')
         for cell in ws[1]:
             cell.fill = PatternFill('solid', fgColor='17365D')
             cell.font = Font(color='FFFFFF', bold=True)
-        for col, width in zip('ABCDEFGHIJ', [30, 36, 28, 24, 50, 40, 28, 22, 35, 65]):
+        for col, width in zip('ABCDEFGHIJK', [30, 36, 28, 24, 50, 40, 28, 22, 35, 65, 55]):
             ws.column_dimensions[col].width = width
         ws.freeze_panes = 'D2'
         ws.auto_filter.ref = ws.dimensions
