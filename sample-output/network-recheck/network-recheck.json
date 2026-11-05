@@ -1,0 +1,27 @@
+[
+  {
+    "host": "microsoft.com",
+    "dns_error": "[Errno -3] Temporary failure in name resolution",
+    "https_error": "HTTPSConnectionPool(host='microsoft.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  {
+    "host": "apple.com",
+    "dns_error": "[Errno -3] Temporary failure in name resolution",
+    "https_error": "HTTPSConnectionPool(host='apple.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  {
+    "host": "nvidia.com",
+    "dns_error": "[Errno -3] Temporary failure in name resolution",
+    "https_error": "HTTPSConnectionPool(host='nvidia.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  {
+    "host": "salesforce.com",
+    "dns_error": "[Errno -3] Temporary failure in name resolution",
+    "https_error": "HTTPSConnectionPool(host='salesforce.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  {
+    "host": "adobe.com",
+    "dns_error": "[Errno -3] Temporary failure in name resolution",
+    "https_error": "HTTPSConnectionPool(host='adobe.com', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  }
+]
