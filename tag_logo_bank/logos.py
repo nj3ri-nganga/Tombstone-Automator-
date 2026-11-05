@@ -1,5 +1,6 @@
 """Discover current official-site assets and validate raster images."""
 from dataclasses import dataclass
+from datetime import date
 from io import BytesIO
 import hashlib
 import ipaddress
@@ -74,6 +75,25 @@ def candidates(html, base):
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
     found = []
+    def label(node):
+        if node is None:
+            return ''
+        return ' '.join(str(node.get(k, '')) for k in
+                        ('alt', 'aria-label', 'title', 'class', 'id', 'src', 'data-src')).lower()
+
+    def branded(node):
+        # Logos often have empty alt text; their containing link carries branding.
+        parent = node.find_parent('a')
+        context = ' '.join((label(node), label(node.parent), label(parent)))
+        if 'logo' in context:
+            return True
+        if parent and node.find_parent(['header', 'nav']):
+            target, official = urlsplit(urljoin(base, parent.get('href', ''))), urlsplit(base)
+            home = (target.netloc.casefold() == official.netloc.casefold() and
+                    target.path.rstrip('/') == '')
+            title = (node.get('alt') or parent.get('aria-label') or '').strip()
+            return home and bool(title) and not re.search(r'\b(search|menu|cart|account|sign in)\b', title, re.I)
+        return False
     def add(value, rank, kind):
         if isinstance(value, dict):
             value = value.get('contentUrl') or value.get('url')
@@ -100,8 +120,7 @@ def candidates(html, base):
         except (ValueError, TypeError):
             pass
     for img in soup.find_all('img'):
-        label = ' '.join([str(img.get(k, '')) for k in ('alt', 'class', 'id', 'src')]).lower()
-        if 'logo' in label:
+        if branded(img):
             rank = 90 if img.find_parent(['header', 'nav']) else 80
             for attr in ('src', 'data-src', 'data-lazy-src'):
                 add(img.get(attr), rank, 'logo_image')
@@ -112,12 +131,22 @@ def candidates(html, base):
                             add(item.strip().split()[0], rank, 'logo_image')
     # Inline vectors in a branded header/nav often have no raster counterpart.
     for svg in soup.find_all('svg'):
-        label = ' '.join(str(svg.get(k, '')) for k in ('class', 'id', 'aria-label'))
-        label += ' ' + svg.get_text(' ', strip=True)
-        if 'logo' in label.lower() and svg.find_parent(['header', 'nav']):
-            if svg.has_attr('viewbox'):
-                svg['viewBox'] = svg.attrs.pop('viewbox')
+        if (branded(svg) or 'logo' in svg.get_text(' ', strip=True).lower()) and svg.find_parent(['header', 'nav']):
+            # HTML parsers lowercase SVG names; restore known case-sensitive XML
+            # names without relaxing the downstream sanitizer's allowlist.
+            tags = {name.lower(): name for name in ('linearGradient', 'radialGradient', 'clipPath')}
+            attrs = {name.lower(): name for name in ('viewBox', 'preserveAspectRatio',
+                     'gradientTransform', 'gradientUnits', 'spreadMethod',
+                     'clipPathUnits', 'maskUnits', 'maskContentUnits')}
+            for node in [svg] + list(svg.find_all(True)):
+                node.name = tags.get(node.name, node.name)
+                for key in list(node.attrs):
+                    if key in attrs:
+                        node[attrs[key]] = node.attrs.pop(key)
             found.append((90, str(svg), 'inline_svg'))
+    for obj in soup.find_all('object', type='image/svg+xml'):
+        if branded(obj):
+            add(obj.get('data'), 85, 'logo_image')
     for link in soup.find_all('link'):
         if any('icon' in rel.lower() for rel in link.get('rel', [])):
             add(link.get('href'), 20, 'icon_review')
@@ -127,32 +156,13 @@ def candidates(html, base):
     return list(unique.values())[:25]
 
 
-def rasterize_svg(data):
+def rasterize_svg(data, notes=None):
     """Render only self-contained SVGs; never resolve external resources."""
-    text = data.decode('utf-8-sig')
-    if '<!' in text:
-        raise ValueError('SVG declarations and entities are forbidden')
-    root = ET.fromstring(text)
-    allowed = {'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
-               'polygon', 'defs', 'clipPath', 'mask', 'linearGradient',
-               'radialGradient', 'stop', 'title', 'desc', 'use'}
-    if root.tag.rsplit('}', 1)[-1] != 'svg':
-        raise ValueError('Expected SVG root')
-    nodes = list(root.iter())
-    if len(nodes) > 10000:
-        raise ValueError('SVG exceeds 10000 elements')
-    for node in nodes:
-        if node.tag.rsplit('}', 1)[-1] not in allowed:
-            raise ValueError('Unsupported or unsafe SVG element')
-        for key, value in node.attrib.items():
-            key = key.rsplit('}', 1)[-1].lower()
-            if key.startswith('on') or key in {'style', 'base'}:
-                raise ValueError('SVG scripts, styles and base URLs are forbidden')
-            if key == 'href' and not value.startswith('#'):
-                raise ValueError('SVG external references are forbidden')
-            for reference in re.findall(r'url\s*\((.*?)\)', value, re.I):
-                if not reference.strip(' \"\'').startswith('#'):
-                    raise ValueError('SVG external resources are forbidden')
+    from .svg import sanitize_svg
+    sanitized, audit = sanitize_svg(data)
+    root = ET.fromstring(sanitized)
+    if notes is not None:
+        notes.extend(['self-contained SVG sanitized'] + audit)
     viewbox = root.get('viewBox', '').replace(',', ' ').split()
     try:
         width, height = (map(float, viewbox[2:]) if len(viewbox) == 4 else
@@ -171,15 +181,20 @@ def rasterize_svg(data):
         raise ValueError('SVG conversion unavailable: install the svg extra and Cairo runtime') from error
     def deny_resource(*args, **kwargs):
         raise ValueError('SVG resource loading is forbidden')
-    return PNGSurface.convert(bytestring=text.encode(), output_width=round(width * ratio),
-                              output_height=round(height * ratio), url_fetcher=deny_resource)
+    try:
+        return PNGSurface.convert(bytestring=sanitized, output_width=round(width * ratio),
+                                  output_height=round(height * ratio), url_fetcher=deny_resource)
+    except Exception as error:
+        # Cairo backends raise platform-specific exception types. Record them as a
+        # candidate failure rather than aborting the remaining companies.
+        raise ValueError(f'SVG conversion failed ({type(error).__name__}): {error}') from error
 
 
-def verify_image(data):
+def verify_image(data, *, notes=None):
     if len(data) > MAX_BYTES:
         raise ValueError('Image exceeds 8 MB')
     if data.lstrip().startswith((b'<', b'\xef\xbb\xbf')):
-        data = rasterize_svg(data)
+        data = rasterize_svg(data, notes=notes)
     with warnings.catch_warnings():
         warnings.simplefilter('error', Image.DecompressionBombWarning)
         with Image.open(BytesIO(data)) as original:
@@ -214,16 +229,48 @@ class Logo:
     sha256: str = ''
 
 
-def find_logo(website, fetcher=None, local=None):
+def manual_approval(data, approval):
+    """A human attestation bound to the original file, not automatic brand approval."""
+    raw_sha = hashlib.sha256(data).hexdigest()
+    if approval is None:
+        return ('MANUAL_REVIEW', 'User-supplied asset; confirm brand approval; '
+                f'original file SHA256={raw_sha}', '')
+    required = {'sha256', 'reviewed_by', 'reviewed_on', 'source_url'}
+    if not isinstance(approval, dict) or set(approval) != required or any(
+            not isinstance(approval[k], str) or not approval[k].strip() for k in required):
+        raise ValueError('approval requires exactly sha256, reviewed_by, reviewed_on and source_url strings')
+    if not re.fullmatch(r'[0-9a-fA-F]{64}', approval['sha256']) or approval['sha256'].lower() != raw_sha:
+        raise ValueError('Manual approval SHA256 does not match the original logo file; review it again')
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', approval['reviewed_on']):
+        raise ValueError('reviewed_on must be YYYY-MM-DD')
+    date.fromisoformat(approval['reviewed_on'])
+    if urlsplit(approval['source_url']).scheme not in ('http', 'https'):
+        raise ValueError('Manual source_url requires an explicit HTTP(S) URL')
+    source = normalize_site(approval['source_url'])
+    parts = urlsplit(source)
+    if parts.username or parts.password or parts.port not in (None, 80, 443):
+        raise ValueError('Manual source URL must be HTTP(S), without credentials or nonstandard ports')
+    return ('MANUAL_APPROVED', f'Human-verified official asset; reviewer={approval["reviewed_by"]}; '
+            f'reviewed_on={approval["reviewed_on"]}; original file SHA256={raw_sha}; '
+            'approval is a user attestation, not independent brand verification', source)
+
+
+def find_logo(website, fetcher=None, local=None, *, approval=None):
     if local:
         try:
             data = local.read_bytes()
             if len(data) > MAX_BYTES:
                 raise ValueError('Local image exceeds 8 MB')
-            png, width, height = verify_image(data)
-            return Logo(png, str(local), '', 'MANUAL_REVIEW', 'User-supplied asset; confirm brand approval', width, height, hashlib.sha256(png).hexdigest())
+            audit = []
+            png, width, height = verify_image(data, notes=audit)
+            status, detail, page = manual_approval(data, approval)
+            if audit:
+                detail += '; ' + '; '.join(audit)
+            return Logo(png, str(local), page, status, detail, width, height, hashlib.sha256(png).hexdigest())
         except (OSError, ValueError, ET.ParseError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             return Logo(status='ERROR', detail=f'local asset {local}: {type(error).__name__}: {error}')
+    if approval is not None:
+        return Logo(status='ERROR', detail='Manual approval requires a local logo_path; no website retrieval attempted')
     if not website:
         return Logo(detail='Supply an official website or local logo override')
     fetcher = fetcher or Fetcher()
@@ -240,19 +287,31 @@ def find_logo(website, fetcher=None, local=None):
                     data, source = url.encode(), page + '#inline-logo'
                 else:
                     data, source = fetcher.get(url)
-                png, width, height = verify_image(data)
-                score = ({'icon_review': 0, 'organization_schema': 2}.get(kind, 1), width * height)
+                audit = []
+                png, width, height = verify_image(data, notes=audit)
+                path = urlsplit(source).path.lower()
+                favicon = (kind == 'icon_review' or path.endswith('.ico') or
+                           'favicon' in path or 'apple-touch-icon' in path)
+                score = (0 if favicon else 2 if kind == 'organization_schema' else 1,
+                         width * height)
                 if score > best_score:
                     best_score = score
-                    best = Logo(png, source, page, 'REVIEW_REQUIRED', f'{kind}; image validated; identity and latest brand version need review', width, height, hashlib.sha256(png).hexdigest())
+                    best = Logo(png, source, page, 'REVIEW_REQUIRED', f'{kind}; image validated; identity and latest brand version need review' + ('; ' + '; '.join(audit) if audit else ''), width, height, hashlib.sha256(png).hexdigest())
             except (requests.RequestException, OSError, ValueError, ET.ParseError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
                 target = page + '#inline-logo' if kind == 'inline_svg' else url
                 errors.append(f'candidate {target}: {type(error).__name__}: {error}')
         if best:
+            if best_score[0] == 0:
+                best.detail += '; favicon fallback only; supply a verified full logo via logo_path if unsuitable'
             if errors:
                 best.detail += '; rejected candidates: ' + '; '.join(errors)
             return best
         return Logo(page=page, status='NOT_FOUND', detail='; '.join(errors) or 'No supported logo candidates on official page')
     except (requests.RequestException, OSError, ValueError) as error:
-        return Logo(status='ERROR', detail=f'{stage} {website}: {type(error).__name__}: {error}')
+        detail = f'{stage} {website}: {type(error).__name__}: {error}'
+        if isinstance(error, requests.HTTPError) and getattr(error.response, 'status_code', None) == 403:
+            detail += ('; website blocks automated access (HTTP 403); no bypass attempted. '
+                       'Supply a verified official PNG with --overrides and logo_path; '
+                       'see README manual logo approval instructions')
+        return Logo(status='ERROR', detail=detail)
 
