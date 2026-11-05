@@ -16,7 +16,7 @@ from openpyxl.utils.units import pixels_to_EMU, pixels_to_points
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
-from .logos import find_logo, normalize_site
+from .logos import find_logo, normalize_site, needs_dark_background
 from .hybrid import Hybrid
 
 
@@ -221,6 +221,8 @@ def build_logo_bank(source, output, *, sheet=None, pairs=None, header_row=1,
                     colOff=pixels_to_EMU(8), rowOff=pixels_to_EMU(8)),
                     ext=XDRPositiveSize2D(pixels_to_EMU(image.width), pixels_to_EMU(image.height)))
                 ws.add_image(image)
+                if needs_dark_background(result.png):
+                    ws.cell(row, logo_col).fill = PatternFill('solid', fgColor='273545')
                 occupied.add((row, logo_col))
                 ws.row_dimensions[row].height = max(ws.row_dimensions[row].height or 15, pixels_to_points(96))
             else:

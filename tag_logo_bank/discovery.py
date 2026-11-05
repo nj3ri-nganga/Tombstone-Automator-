@@ -89,7 +89,8 @@ def discover(html, page, company, aliases=()):
         display_label = ' '.join(str(img.get(k, '')) for k in ('alt', 'title', 'aria-label'))
         alt = img.get('alt', '').strip()
         generic = not normalized_name(img.get('alt', '')) or normalized_name(img.get('alt', '')) in {'logo', 'home', 'company logo'}
-        partial = normalized_name(img.get('alt', '')) in normalized_name(company).split()
+        short_brand = re.sub(r'\b(?:logo|home)\b', '', normalized_name(img.get('alt', ''))).strip()
+        partial = bool(short_brand) and short_brand in normalized_name(company).split()
         if not generic and not identity(company, display_label, aliases) and not (page_matches and partial):
             continue
         name_matches = identity(company, display_label, aliases) or (page_matches and identity(company, filenames, aliases))

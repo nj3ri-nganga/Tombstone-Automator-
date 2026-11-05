@@ -153,6 +153,11 @@ class NetworkTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec('bs4'), 'BeautifulSoup installed in Windows/Linux CI')
 class DiscoveryTests(unittest.TestCase):
+    def test_abbreviated_hub_logo_requires_matching_page_brand(self):
+        html = b'<title>Insurance Brokers | HUB International</title><meta property="og:site_name" content="hub-international"><header><img alt="HUB Logo" src="https://cdn.com/hash.svg"></header>'
+        self.assertTrue(discover(html, 'https://www.hubinternational.com/', 'HUB International')[0])
+        self.assertEqual(discover(html.replace(b'hub-international', b'acquirer'), 'https://www.hubinternational.com/', 'HUB International')[0], [])
+
     def test_schema_header_responsive_and_og_candidates(self):
         html = b'''<title>Small Insurer</title><meta property="og:site_name" content="Small Insurer">
         <script type="application/ld+json">{"@type":"InsuranceAgency","name":"Small Insurer","logo":"/schema.png"}</script>
@@ -224,6 +229,15 @@ class SVGTests(unittest.TestCase):
 
 
 class PreservationTests(unittest.TestCase):
+    def test_white_transparent_marks_get_a_cell_background_not_recolored_pixels(self):
+        from tag_logo_bank.logos import needs_dark_background
+        image = PILImage.new('RGBA', (240, 90))
+        ImageDraw.Draw(image).rectangle((5, 5, 120, 80), fill='white')
+        stream = BytesIO()
+        image.save(stream, 'PNG')
+        self.assertTrue(needs_dark_background(stream.getvalue()))
+        self.assertFalse(needs_dark_background(png()))
+
     def test_current_logo_is_filled_without_replacing_notes_rows_or_existing_image(self):
         with TemporaryDirectory() as directory:
             directory = Path(directory)

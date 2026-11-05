@@ -84,6 +84,17 @@ def verify_image(data):
     return output.getvalue(), width, height
 
 
+def needs_dark_background(data):
+    """Keep white transparent marks visible without modifying company artwork."""
+    with Image.open(BytesIO(data)) as original:
+        image = original.convert('RGBA')
+        image.thumbnail((240, 120))
+        if image.getchannel('A').getextrema()[0] >= 128:
+            return False
+        pixels = [p for p in image.getdata() if p[3] >= 128]
+        return bool(pixels) and sum(min(p[:3]) > 225 for p in pixels) / len(pixels) > .6
+
+
 @dataclass
 class Logo:
     png: bytes | None = None

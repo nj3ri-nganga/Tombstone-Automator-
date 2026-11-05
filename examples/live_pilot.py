@@ -10,6 +10,7 @@ from PIL import Image, ImageDraw
 from openpyxl import Workbook, load_workbook
 from tag_logo_bank import build_logo_bank
 from tag_logo_bank.workbook import image_cell
+from tag_logo_bank.logos import needs_dark_background
 
 
 def main():
@@ -50,6 +51,8 @@ def main():
         draw.text((10, y + 35), str(item['status']), fill='black')
         draw.text((10, y + 55), str(item['method'])[:45], fill='black')
         if item['local_png']:
+            if needs_dark_background(Path(item['local_png']).read_bytes()):
+                draw.rectangle((390, y + 5, 890, y + 115), fill='#273545')
             with Image.open(item['local_png']) as logo:
                 logo = logo.convert('RGBA')
                 logo.thumbnail((450, 105))
