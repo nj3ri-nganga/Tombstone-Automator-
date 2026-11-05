@@ -83,7 +83,7 @@ def image_cell(image):
 def build_logo_bank(source, output, *, sheet=None, pairs=None, header_row=1,
                     overrides=None, fetcher=None, logos_dir=None, cache_dir=None,
                     use_api=True, web_search=False, search_domains=(), refresh=False, max_wait=2,
-                    limit=None):
+                    limit=None, compact=True):
     source, output = Path(source), Path(output)
     logos_dir = Path(logos_dir) if logos_dir is not None else output.parent / f'{output.stem}_logos'
     if source.resolve() == output.resolve():
@@ -109,6 +109,7 @@ def build_logo_bank(source, output, *, sheet=None, pairs=None, header_row=1,
         existing = 'Logos' in wb
         ws = wb['Logos'] if existing else wb.create_sheet('Logos')
         logo_header_row = header_row if sheet == 'Logos' else 1
+        archive_details = existing and ws.max_column > 3
         if not existing:
             ws.append(['Company', 'Website', 'Current Logo', 'Status', 'Source', 'Official page',
                        'Retrieved UTC', 'Original dimensions', 'SHA256 (embedded PNG)', 'Verification / notes', 'Local PNG'])
@@ -241,6 +242,10 @@ def build_logo_bank(source, output, *, sheet=None, pairs=None, header_row=1,
             ws.auto_filter.ref = ws.dimensions
         ws.column_dimensions[get_column_letter(logo_col)].width = max(ws.column_dimensions[get_column_letter(logo_col)].width or 13, 28)
         output.parent.mkdir(parents=True, exist_ok=True)
+        if compact:
+            from .presentation import present_logos
+            present_logos(wb, ws, output, logo_header_row, name_col, site_col, logo_col,
+                          archive=archive_details)
         fd, temporary = tempfile.mkstemp(suffix='.xlsx', dir=output.parent)
         os.close(fd)
         try:

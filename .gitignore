@@ -27,6 +27,7 @@ work/
 output/
 logos/
 .tag-logo-cache/
+*.logo-audit.json
 pilot-output/
 .env
 .env.*

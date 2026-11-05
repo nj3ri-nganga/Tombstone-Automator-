@@ -34,7 +34,7 @@ class WorkbookTests(unittest.TestCase):
             wb.save(source)
             api = MagicMock()
             api.lookup.return_value = Logo(status='NOT_FOUND')
-            self.assertEqual(build_logo_bank(source, output, fetcher=api), {'NOT_FOUND': 1})
+            self.assertEqual(build_logo_bank(source, output, compact=False, fetcher=api), {'NOT_FOUND': 1})
             api.lookup.assert_called_once_with('Adobe', '')
 
     def test_domains_and_tracking_urls(self):
@@ -88,7 +88,7 @@ class WorkbookTests(unittest.TestCase):
                        Logo(embedded, status='MANUAL_REVIEW'), Logo(status='NOT_FOUND'),
                        Logo(embedded, status='REVIEW_REQUIRED'), Logo(status='MATCH_UNCERTAIN')]
             with patch('tag_logo_bank.workbook.find_logo', side_effect=results):
-                counts = build_logo_bank(source, output)
+                counts = build_logo_bank(source, output, compact=False)
             self.assertEqual(counts['NOT_FOUND'], 1)
             result = load_workbook(output)
             ws = result['Logos']
@@ -115,7 +115,7 @@ class WorkbookTests(unittest.TestCase):
                 self.assertEqual(len([n for n in archive.namelist() if n.startswith('xl/media/')]), 3)
             second = folder / 'second.xlsx'
             with patch('tag_logo_bank.workbook.find_logo', return_value=Logo(status='NOT_FOUND')):
-                build_logo_bank(output, second)
+                build_logo_bank(output, second, compact=False)
             result = load_workbook(second)
             self.assertEqual(result.sheetnames.count('Logos'), 1)
             self.assertEqual(len(result['Logos']._images), 3)  # Preserve the user's existing logo cells/images.
@@ -136,7 +136,7 @@ class WorkbookTests(unittest.TestCase):
             output = folder / 'out.xlsx'
             with patch('tag_logo_bank.workbook.find_logo', return_value=Logo(png(), status='REVIEW_REQUIRED')), \
                  patch('tag_logo_bank.workbook.save_png', side_effect=OSError('disk full')):
-                self.assertEqual(build_logo_bank(source, output), {'ERROR': 1})
+                self.assertEqual(build_logo_bank(source, output, compact=False), {'ERROR': 1})
             result = load_workbook(output)
             self.assertEqual(len(result['Logos']._images), 0)
             self.assertIn('disk full', result['Logos']['J2'].value)
