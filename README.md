@@ -66,7 +66,7 @@ Pillow checks decoding, dimensions, blank/invisible images, and decompression li
 - Supported workbook format: `.xlsx` only. Source and output paths must differ. Back up existing output files; a successful run replaces the output atomically.
 - An existing `Logos` worksheet in the output copy is rebuilt. Other worksheets are retained using openpyxl; complex Excel drawings or unsupported features may not round-trip exactly.
 - Uses supplied official websites rather than unverified search results. Check redirected sites and CDN sources during manual review.
-- Raster PNG/JPEG/WebP and other Pillow-supported formats are accepted. SVG-only logos and JavaScript-rendered pages require a manually exported raster logo. No browser automation is used.
+- Raster PNG/JPEG/WebP and other Pillow-supported formats are accepted. SVG logos use the optional sanitizer/converter described below; unsupported SVGs and JavaScript-rendered pages require a verified raster export. No browser automation is used.
 - No automatic crawling of brand portals, OCR, visual identity matching, or tombstone-slide generation in this first stage.
 - A network that allows access to company websites and their asset CDNs is needed for live discovery. This project's validation was performed offline with deterministic sample data, not live corporate sites.
 - Importable API: `from tag_logo_bank import build_logo_bank`; returns a dictionary of status counts.
@@ -98,8 +98,14 @@ brand review. No substitute or placeholder company artwork is generated.
 SVG conversion is optional: `python -m pip install -e ".[svg]"`. CairoSVG also
 requires a working native Cairo runtime, particularly on Windows. Unsupported
 SVGs or unavailable conversion are recorded in candidate diagnostics and raster
-fallbacks are still attempted. SVG declarations/entities, script, CSS styles,
-embedded images and external references are rejected. The renderer also blocks
+fallbacks are still attempted. The SVG sanitizer accepts XML declarations, comments,
+CDATA, and the standard SVG 1.1 public DOCTYPE emitted by common vector editors.
+It removes that DOCTYPE without fetching it. Safe inline presentation styles and
+simple element/class/ID stylesheet rules are expanded into attributes; no CSS
+text reaches the renderer. Sanitization is recorded in review notes. Internal
+entities/subsets, unknown DTDs, processing instructions, scripts, event handlers,
+base URLs, embedded images, external references and unsupported CSS are rejected.
+Local gradient/clip/use references are allowed with cycle and expansion limits. The renderer also blocks
 resource fetching and bounds output dimensions. Existing URL, redirect, download
 size and raster validation checks remain active.
 
@@ -117,10 +123,13 @@ They use synthetic geometry solely as test fixtures, not substitute company logo
 The SVG renderer unit test mocks conversion; it verifies the dimension bounds and
 blocked fetch callback, not native Cairo rendering.
 
-The Codex runtime used for this change lacks BeautifulSoup, pytest and CairoSVG.
-Nine new unittest regressions passed offline; the discovery test was skipped
-because BeautifulSoup was unavailable. The pre-existing pytest suite and real SVG
-conversion could not run here. No live logo retrieval was attempted.
+The Codex runtime lacks BeautifulSoup, pytest and CairoSVG. Offline unittest
+validation ran 25 tests: 22 passed and three skipped (two HTML discovery tests
+need BeautifulSoup; one native rendering test needs CairoSVG/Cairo). The
+pre-existing pytest suite could not run here. No live logo retrieval was attempted.
+Run both unittest regression files with `python -m unittest discover -s tests -p "test_*regressions.py" -v`
+and `python -m unittest discover -s tests -p test_svg_manual.py -v`, or run the
+complete suite with pytest when all dependencies are installed.
 
 On Windows/Python 3.14, install the normal/dev dependencies (and optionally the svg
 extra plus Cairo), run the complete pytest suite, then repeat the real Microsoft,
@@ -129,3 +138,97 @@ review all failure notes (especially Adobe), and open the workbook in desktop
 Excel to confirm that Salesforce stays in its row when NVIDIA has no image.
 Actual site availability, current markup, native SVG conversion and desktop Excel
 rendering require this local validation.
+
+
+## Verified manual logos when a website blocks automation
+
+HTTP 403 remains an `ERROR` with explicit manual-override guidance. The application
+will not spoof a browser, switch domains, crawl another company, or attempt to
+bypass that restriction. A local `logo_path` takes precedence and skips website
+requests entirely, including when a website is supplied. A missing or invalid
+local file produces `ERROR`; it never silently falls back to online discovery.
+
+1. Obtain the logo through an authorized official company brand/press source or
+   directly from the company. Confirm the exact legal entity, current branding,
+   permitted use, transparency and adequate resolution. Do not use an acquirer's
+   or another company's logo. For Adobe, provide a verified official PNG rather
+   than trying to defeat adobe.com's automated-access restriction.
+2. Save it locally, for example `logos/adobe-official.png`. Create `overrides.json`
+   next to the `logos` folder. Use the exact company name from your workbook
+   (matching is case insensitive):
+
+   ```json
+   {
+     "Adobe": {
+       "website": "https://www.adobe.com/",
+       "logo_path": "logos/adobe-official.png"
+     }
+   }
+   ```
+
+   Paths are relative to the JSON file, including paths containing spaces.
+   Windows UTF-8 JSON files with a BOM are supported. In JSON, use `/` in paths
+   or escape each Windows backslash as `\\`.
+3. Run the existing command:
+
+   ```powershell
+   python -m tag_logo_bank transactions.xlsx reviewed-logos.xlsx --overrides overrides.json
+   ```
+
+   The asset is validated and embedded as `MANUAL_REVIEW`. Inspect it in Excel,
+   verify its official source and identity, and obtain your normal brand approval.
+   Supplying a file alone does not approve it.
+4. To record your explicit approval for future runs, calculate the SHA256 of the
+   **original local file** after verification:
+
+   ```powershell
+   (Get-FileHash -Algorithm SHA256 .\logos\adobe-official.png).Hash.ToLowerInvariant()
+   ```
+
+   Add an `approval` object to the same override. Replace the explanatory values
+   below with the actual 64-character hash, reviewer, ISO date and official source
+   URL you verified; this example is a schema, not a preapproved asset:
+
+   ```json
+   {
+     "Adobe": {
+       "website": "https://www.adobe.com/",
+       "logo_path": "logos/adobe-official.png",
+       "approval": {
+         "sha256": "REPLACE_WITH_ORIGINAL_FILE_SHA256",
+         "reviewed_by": "REPLACE_WITH_REVIEWER_NAME",
+         "reviewed_on": "2026-11-05",
+         "source_url": "https://www.adobe.com/"
+       }
+     }
+   }
+   ```
+
+   Use the actual official brand page or asset URL when known, rather than the
+   homepage in this schema. All four approval fields are required. The source
+   URL is recorded as provenance and is not fetched or independently verified.
+   Rerun with a separate output filename. A matching hash and valid approval
+   record produce `MANUAL_APPROVED`; reviewer, date and original file hash appear
+   in notes, the official source is in `Official page`, and `Source` retains the
+   local path. A changed file, invalid record or missing file produces `ERROR`.
+   Reverify changed files before replacing their approval hashes.
+
+The existing `SHA256 (embedded PNG)` column identifies the normalized embedded
+image; it is different from the original-file approval hash. Human approval is
+an explicit user attestation, not automatic proof of brand ownership or permission.
+Old overrides remain valid and retain `MANUAL_REVIEW` without an approval object.
+Online logos always retain `REVIEW_REQUIRED`. Rerunning rebuilds the Logos sheet,
+so keep approvals in your override JSON rather than editing worksheet statuses.
+
+### Windows validation still required
+
+Run `python -m pip install -e ".[test,svg]"`, ensure the native Cairo runtime is
+available to Python 3.14, then run `python -m pytest -q`. The optional native SVG
+test should run rather than skip; check any native-runtime error explicitly.
+Repeat the live company test to confirm whether NVIDIA's actual exports fall
+within the supported SVG/CSS subset and whether Microsoft's current page exposes
+its full logo. Unsupported SVGs must remain diagnostic failures and should be
+replaced only with a manually verified official raster export. Check Adobe via
+a local official PNG and the approval workflow above. Confirm native conversion
+fidelity, identity, resolution, transparency and desktop Excel appearance. No
+claim is made here that the actual live company assets have been retrieved.

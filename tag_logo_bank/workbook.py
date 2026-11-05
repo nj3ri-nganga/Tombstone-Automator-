@@ -82,7 +82,10 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
                 except ValueError:
                     pass  # find_logo reports invalid websites without aborting the workbook.
             local = Path(override['logo_path']) if override.get('logo_path') else None
-            result = find_logo(site, fetcher, local)
+            if 'approval' in override:
+                result = find_logo(site, fetcher, local, approval=override['approval'])
+            else:
+                result = find_logo(site, fetcher, local)
             counts[result.status] = counts.get(result.status, 0) + 1
             ws.append([name, site, '', result.status, result.source, result.page,
                        datetime.now(timezone.utc).isoformat(timespec='seconds'),

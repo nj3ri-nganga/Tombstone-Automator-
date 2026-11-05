@@ -108,7 +108,7 @@ class RegressionTests(unittest.TestCase):
                         '<svg><image href="https://evil.example/a"/></svg>',
                         '<svg><use href="file:///etc/passwd"/></svg>',
                         '<svg><path fill="url(https://evil.example/a)"/></svg>',
-                        '<svg><path style="fill:red"/></svg>'):
+                        '<svg><path style="fill:url(https://evil.example/a)"/></svg>'):
             with self.subTest(content=content), self.assertRaises(ValueError):
                 rasterize_svg(content.encode())
 

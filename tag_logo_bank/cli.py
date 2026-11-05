@@ -15,7 +15,8 @@ def main():
     parser.add_argument('--header-row', type=int, default=1)
     parser.add_argument('--pair', action='append', metavar='COMPANY:WEBSITE',
                         help='Repeat for Target, Buyer, etc.; blank website header allowed')
-    parser.add_argument('--overrides', type=Path, help='JSON company-to-website/local-logo mapping')
+    parser.add_argument('--overrides', type=Path,
+                        help='JSON company-to-website/local-logo mapping; optional hash-bound manual approval (see README)')
     args = parser.parse_args()
     try:
         pairs = []
@@ -26,7 +27,7 @@ def main():
             pairs.append((name, website))
         if args.header_row < 1:
             raise ValueError('--header-row must be positive')
-        overrides = json.loads(args.overrides.read_text()) if args.overrides else {}
+        overrides = json.loads(args.overrides.read_text(encoding='utf-8-sig')) if args.overrides else {}
         if not isinstance(overrides, dict) or any(not isinstance(v, dict) for v in overrides.values()):
             raise ValueError('Overrides must map company names to objects')
         for override in overrides.values():
@@ -43,3 +44,4 @@ def main():
 
 if __name__ == '__main__':
     raise SystemExit(main())
+
