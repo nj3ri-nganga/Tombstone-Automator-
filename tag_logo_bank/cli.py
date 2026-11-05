@@ -12,6 +12,8 @@ def main():
     parser.add_argument('input', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--sheet', default='Transactions')
+    parser.add_argument('--logos-dir', type=Path,
+                        help='Save downloaded PNGs here (default: OUTPUT_STEM_logos beside output)')
     parser.add_argument('--header-row', type=int, default=1)
     parser.add_argument('--pair', action='append', metavar='COMPANY:WEBSITE',
                         help='Repeat for Target, Buyer, etc.; blank website header allowed')
@@ -34,8 +36,9 @@ def main():
             if override.get('logo_path'):
                 override['logo_path'] = str((args.overrides.parent / override['logo_path']).resolve())
         counts = build_logo_bank(args.input, args.output, sheet=args.sheet, pairs=pairs,
-                                 header_row=args.header_row, overrides=overrides)
-        print(json.dumps({'output': str(args.output), 'statuses': counts}, indent=2))
+                                 header_row=args.header_row, overrides=overrides, logos_dir=args.logos_dir)
+        logos_dir = args.logos_dir or args.output.parent / f'{args.output.stem}_logos'
+        print(json.dumps({'output': str(args.output), 'logos_dir': str(logos_dir), 'statuses': counts}, indent=2))
         return 0
     except (OSError, ValueError, KeyError, TypeError, BadZipFile, ParseError) as error:
         print(f'Error: {error}', file=sys.stderr)
