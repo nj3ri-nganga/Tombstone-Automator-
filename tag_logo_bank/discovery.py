@@ -130,7 +130,12 @@ def discover(html, page, company, aliases=()):
     unique = {}
     for candidate in sorted(candidates, key=lambda c: -c.rank):
         unique.setdefault(candidate.value, candidate)
-    return list(unique.values())[:16], '; '.join(evidence)[:1000]
+    if not unique:
+        hints = [{'alt': str(i.get('alt', ''))[:100], 'class': str(i.get('class', ''))[:100],
+                  'src': str(i.get('src') or i.get('data-src') or '')[:250],
+                  'parent': str(i.parent.attrs)[:200]} for i in soup.find_all('img')[:8]]
+        evidence.append('No accepted candidate; image hints=' + json.dumps(hints))
+    return list(unique.values())[:16], '; '.join(evidence)[:3500]
 
 
 def image_bytes(data):
