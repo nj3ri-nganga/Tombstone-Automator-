@@ -84,6 +84,17 @@ def verify_image(data):
     return output.getvalue(), width, height
 
 
+def needs_dark_background(data):
+    """Keep white transparent marks visible without modifying company artwork."""
+    with Image.open(BytesIO(data)) as original:
+        image = original.convert('RGBA')
+        image.thumbnail((240, 120))
+        if image.getchannel('A').getextrema()[0] >= 128:
+            return False
+        pixels = [p for p in image.getdata() if p[3] >= 128]
+        return bool(pixels) and sum(min(p[:3]) > 225 for p in pixels) / len(pixels) > .6
+
+
 @dataclass
 class Logo:
     png: bytes | None = None
@@ -96,6 +107,8 @@ class Logo:
     sha256: str = ''
     downloaded_png: bytes | None = None
     domain: str = ''
+    method: str = ''
+    retry_at: float = 0
 
 
 def manual_approval(data, approval):
@@ -137,5 +150,11 @@ def find_logo(website='', fetcher=None, local=None, *, company='', approval=None
             return Logo(status='ERROR', detail=f'local asset {local}: {type(error).__name__}: {error}')
     if approval is not None:
         return Logo(status='ERROR', detail='Manual approval requires a local logo_path; no API request attempted')
-    from .api import LogoAPI
-    return (fetcher or LogoAPI()).lookup(company, website)
+    if fetcher is None:
+        from .hybrid import Hybrid
+        fetcher = Hybrid()
+        try:
+            return fetcher.lookup(company, website)
+        finally:
+            fetcher.close()
+    return fetcher.lookup(company, website)

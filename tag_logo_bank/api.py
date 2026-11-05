@@ -133,9 +133,11 @@ class LogoAPI:
                         width, height, hashlib.sha256(png).hexdigest(), response.data, domain)
         except requests.HTTPError as error:
             code = getattr(error.response, 'status_code', None)
-            status = 'NOT_FOUND' if code == 404 else 'ERROR'
+            status = 'NOT_FOUND' if code == 404 else 'RATE_LIMITED' if code == 429 else 'ERROR'
             advice = 'Rate limited; retry later.' if code == 429 else 'No website scraping or fallback attempted.'
             return Logo(status=status, detail=f'LogoAPI {stage}: HTTP {code}; {advice}')
         except (requests.RequestException, OSError, ValueError, Image.DecompressionBombError,
                 Image.DecompressionBombWarning) as error:
+            if hasattr(error, 'retry_at'):
+                return Logo(status='RATE_LIMITED', retry_at=error.retry_at, detail=str(error))
             return Logo(status='ERROR', detail=f'LogoAPI {stage}: {type(error).__name__}: {error}')

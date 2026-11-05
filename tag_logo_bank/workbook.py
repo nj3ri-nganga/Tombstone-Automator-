@@ -8,14 +8,16 @@ import hashlib
 import re
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image
 from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 from openpyxl.utils.units import pixels_to_EMU, pixels_to_points
 from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
-from .logos import find_logo, normalize_site
-from .api import LogoAPI
+from .logos import find_logo, normalize_site, needs_dark_background
+from .hybrid import Hybrid
 
 
 def save_png(directory, name, result):
@@ -70,84 +72,174 @@ def extract_companies(sheet, pairs, header_row=1):
     return list(companies.values())
 
 
-def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_row=1,
-                    overrides=None, fetcher=None, logos_dir=None):
+def image_cell(image):
+    anchor = image.anchor
+    if isinstance(anchor, str):
+        from openpyxl.utils.cell import coordinate_to_tuple
+        return coordinate_to_tuple(anchor)
+    return anchor._from.row + 1, anchor._from.col + 1
+
+
+def build_logo_bank(source, output, *, sheet=None, pairs=None, header_row=1,
+                    overrides=None, fetcher=None, logos_dir=None, cache_dir=None,
+                    use_api=True, web_search=False, search_domains=(), refresh=False, max_wait=2,
+                    limit=None):
     source, output = Path(source), Path(output)
     logos_dir = Path(logos_dir) if logos_dir is not None else output.parent / f'{output.stem}_logos'
     if source.resolve() == output.resolve():
         raise ValueError('Choose a separate output file to preserve the source')
     if source.suffix.lower() != '.xlsx' or output.suffix.lower() != '.xlsx':
         raise ValueError('Only .xlsx workbooks are supported')
-    if sheet == 'Logos':
-        raise ValueError('Source worksheet cannot be Logos')
     wb = load_workbook(source)
+    owned = fetcher is None
     try:
+        sheet = sheet or ('Logos' if 'Logos' in wb else 'Transactions' if 'Transactions' in wb else wb.active.title)
         if sheet not in wb:
             raise ValueError(f'Worksheet not found: {sheet}')
+        source_ws = wb[sheet]
+        source_headers = {text(c).casefold(): c.column for c in source_ws[header_row] if text(c)}
         if pairs is None:
-            has_website = any(text(cell).casefold() == 'website' for cell in wb[sheet][header_row])
-            pairs = [('Company', 'Website' if has_website else '')]
-        companies = extract_companies(wb[sheet], pairs, header_row)
-        if 'Logos' in wb:
-            del wb['Logos']
-        ws = wb.create_sheet('Logos')
-        ws.append(['Company', 'Website', 'Logo', 'Status', 'Source', 'Official page',
-                   'Retrieved UTC', 'Original dimensions', 'SHA256 (embedded PNG)', 'Verification / notes', 'Local PNG'])
+            name = next((text(source_ws.cell(header_row, source_headers[k])) for k in
+                         ('company', 'company name', 'target', 'target company') if k in source_headers), 'Company')
+            website = next((text(source_ws.cell(header_row, source_headers[k])) for k in
+                            ('website', 'company website', 'url') if k in source_headers), '')
+            pairs = [(name, website)]
+        # Validate configured headers using the same extraction rules as before.
+        companies = extract_companies(source_ws, pairs, header_row)
+        existing = 'Logos' in wb
+        ws = wb['Logos'] if existing else wb.create_sheet('Logos')
+        logo_header_row = header_row if sheet == 'Logos' else 1
+        if not existing:
+            ws.append(['Company', 'Website', 'Current Logo', 'Status', 'Source', 'Official page',
+                       'Retrieved UTC', 'Original dimensions', 'SHA256 (embedded PNG)', 'Verification / notes', 'Local PNG'])
+        headers = {text(c).casefold(): c.column for c in ws[logo_header_row] if text(c)}
+
+        def column(name, aliases=()):
+            for key in (name.casefold(), *aliases):
+                if key in headers:
+                    return headers[key]
+            col = ws.max_column + 1 if any(text(c) for c in ws[logo_header_row]) else 1
+            ws.cell(logo_header_row, col, name)
+            headers[name.casefold()] = col
+            return col
+
+        name_col = column('Company', ('company name', 'target', 'target company'))
+        site_col = column('Website', ('company website', 'url'))
+        logo_col = column('Current Logo', ('logo',))
+        # Existing statuses, notes and source fields are historical information.
+        # Append our own latest-attempt fields instead of overwriting those cells.
+        names = (['Latest Retrieval Status', 'Latest Retrieval Source', 'Latest Official Page',
+                  'Latest Retrieved UTC', 'Latest Dimensions', 'Latest Embedded SHA256',
+                  'Latest Retrieval Notes', 'Latest Local PNG'] if existing else
+                 ['Status', 'Source', 'Official page', 'Retrieved UTC', 'Original dimensions',
+                  'SHA256 (embedded PNG)', 'Verification / notes', 'Local PNG'])
+        metadata_cols = [column(n) for n in names]
+        method_col, retry_col = column('Retrieval Method'), column('Retry After UTC')
         overrides = {k.casefold(): v for k, v in (overrides or {}).items()}
-        fetcher = fetcher or LogoAPI()
+        aliases = {k: v.get('identity_names', []) for k, v in overrides.items() if v.get('identity_names')}
+        fetcher = fetcher or Hybrid(cache_dir or output.parent / '.tag-logo-cache', use_api=use_api,
+                                    web_search=web_search, search_domains=search_domains,
+                                    aliases=aliases, refresh=refresh, max_wait=max_wait)
+        occupied = {image_cell(image) for image in ws._images}
+        tasks = []
+        if sheet == 'Logos':
+            if len(pairs) != 1:
+                raise ValueError('Use one company/website pair when updating Logos directly')
+            nc = source_headers[pairs[0][0].casefold()]
+            sc = source_headers[pairs[0][1].casefold()] if pairs[0][1] else None
+            for row in range(header_row + 1, ws.max_row + 1):
+                company = text(ws.cell(row, nc))
+                if company:
+                    cell = ws.cell(row, sc) if sc else None
+                    site = (cell.hyperlink.target if cell is not None and cell.hyperlink else text(cell)) if cell is not None else ''
+                    tasks.append((row, company, site))
+        else:
+            def key(name, site):
+                try:
+                    from .logos import website_domain
+                    domain = website_domain(site) if site else ''
+                except ValueError:
+                    domain = str(site).casefold()
+                return name.casefold(), domain
+            rows = {key(text(ws.cell(r, name_col)), text(ws.cell(r, site_col))): r
+                    for r in range(logo_header_row + 1, ws.max_row + 1) if text(ws.cell(r, name_col))}
+            for name, site in companies:
+                row = rows.get(key(name, site))
+                if row is None:
+                    row = ws.max_row + 1
+                    ws.cell(row, name_col, name).data_type = 's'
+                    ws.cell(row, site_col, site).data_type = 's'
+                    rows[key(name, site)] = row
+                tasks.append((row, name, site))
         counts = {}
-        for name, website in companies:
+        attempted = 0
+        for row, name, website in tasks:
+            if (row, logo_col) in occupied or ws.cell(row, logo_col).value is not None:
+                counts['ALREADY_PRESENT'] = counts.get('ALREADY_PRESENT', 0) + 1
+                continue
+            if limit is not None and attempted >= limit:
+                break
+            attempted += 1
             override = overrides.get(name.casefold(), {})
             site = override.get('website', website)
             if site:
                 try:
                     site = normalize_site(site)
                 except ValueError:
-                    pass  # find_logo reports invalid websites without aborting the workbook.
+                    pass
             local = Path(override['logo_path']) if override.get('logo_path') else None
+            kwargs = {'company': name}
             if 'approval' in override:
-                result = find_logo(site, fetcher, local, company=name, approval=override['approval'])
-            else:
-                result = find_logo(site, fetcher, local, company=name)
+                kwargs['approval'] = override['approval']
+            result = find_logo(site, fetcher, local, **kwargs)
             saved = ''
             if result.png:
                 try:
                     saved = save_png(logos_dir, name, result)
                 except OSError as error:
-                    result.png = None
-                    result.status = 'ERROR'
+                    result.png, result.status = None, 'ERROR'
                     result.detail = f'Local PNG save: {type(error).__name__}: {error}'
             counts[result.status] = counts.get(result.status, 0) + 1
-            ws.append([name, site, '', result.status, result.source, result.page,
-                       datetime.now(timezone.utc).isoformat(timespec='seconds'),
-                       f'{result.width} x {result.height}' if result.png else '',
-                       result.sha256, result.detail[:32000], saved])
-            row = ws.max_row
-            for cell in ws[row]:
-                if isinstance(cell.value, str):
-                    cell.data_type = 's'  # Treat workbook/network text as literal, never a formula.
+            values = [result.status, result.source, result.page,
+                      datetime.now(timezone.utc).isoformat(timespec='seconds'),
+                      f'{result.width} x {result.height}' if result.png else '', result.sha256,
+                      result.detail[:32000], saved]
+            for col, value in zip(metadata_cols, values):
+                if isinstance(value, str):
+                    value = ILLEGAL_CHARACTERS_RE.sub('', value)
+                cell = ws.cell(row, col, value)
+                cell.data_type = 's'
                 cell.alignment = Alignment(vertical='center', wrap_text=True)
+            ws.cell(row, method_col, result.method or ('manual_raster' if local else 'logoapi')).data_type = 's'
+            ws.cell(row, retry_col, datetime.fromtimestamp(result.retry_at, timezone.utc).isoformat() if result.retry_at else '').data_type = 's'
             if result.png:
                 image = Image(BytesIO(result.png))
                 ratio = min(180 / image.width, 75 / image.height, 1)
                 image.width *= ratio
                 image.height *= ratio
-                image.anchor = OneCellAnchor(
-                    _from=AnchorMarker(col=2, row=row - 1,
-                                       colOff=pixels_to_EMU(8), rowOff=pixels_to_EMU(8)),
+                image.anchor = OneCellAnchor(_from=AnchorMarker(col=logo_col - 1, row=row - 1,
+                    colOff=pixels_to_EMU(8), rowOff=pixels_to_EMU(8)),
                     ext=XDRPositiveSize2D(pixels_to_EMU(image.width), pixels_to_EMU(image.height)))
                 ws.add_image(image)
-            ws.row_dimensions[row].height = pixels_to_points(96)
-            if not result.png:
-                for cell in ws[row]:
-                    cell.fill = PatternFill('solid', fgColor='FFF2CC')
-        for cell in ws[1]:
-            cell.fill = PatternFill('solid', fgColor='17365D')
-            cell.font = Font(color='FFFFFF', bold=True)
-        for col, width in zip('ABCDEFGHIJK', [30, 36, 28, 24, 50, 40, 28, 22, 35, 65, 55]):
-            ws.column_dimensions[col].width = width
-        ws.freeze_panes = 'D2'
-        ws.auto_filter.ref = ws.dimensions
+                if needs_dark_background(result.png):
+                    ws.cell(row, logo_col).fill = PatternFill('solid', fgColor='273545')
+                occupied.add((row, logo_col))
+                ws.row_dimensions[row].height = max(ws.row_dimensions[row].height or 15, pixels_to_points(96))
+            else:
+                ws.cell(row, metadata_cols[0]).fill = PatternFill('solid', fgColor='FFF2CC')
+                if not existing:
+                    for cell in ws[row]:
+                        cell.fill = PatternFill('solid', fgColor='FFF2CC')
+        # Style only newly created sheets/columns; preserve the user's layout.
+        if not existing:
+            for cell in ws[1]:
+                cell.fill = PatternFill('solid', fgColor='17365D')
+                cell.font = Font(color='FFFFFF', bold=True)
+            for col, width in zip('ABCDEFGHIJK', [30, 36, 28, 24, 50, 40, 28, 22, 35, 65, 55]):
+                ws.column_dimensions[col].width = width
+            ws.freeze_panes = 'D2'
+            ws.auto_filter.ref = ws.dimensions
+        ws.column_dimensions[get_column_letter(logo_col)].width = max(ws.column_dimensions[get_column_letter(logo_col)].width or 13, 28)
         output.parent.mkdir(parents=True, exist_ok=True)
         fd, temporary = tempfile.mkstemp(suffix='.xlsx', dir=output.parent)
         os.close(fd)
@@ -158,5 +250,6 @@ def build_logo_bank(source, output, *, sheet='Transactions', pairs=None, header_
             Path(temporary).unlink(missing_ok=True)
         return counts
     finally:
+        if owned and fetcher is not None:
+            fetcher.close()
         wb.close()
-

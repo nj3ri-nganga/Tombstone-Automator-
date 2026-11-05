@@ -7,10 +7,11 @@ name = "tag-logo-bank"
 version = "2.0.0"
 description = "Auditable Excel logo bank for TAG transaction tombstones"
 requires-python = ">=3.10"
-dependencies = ["openpyxl>=3.1,<4", "requests>=2.32,<3", "Pillow>=10.4,<14"]
+dependencies = ["openpyxl>=3.1,<4", "requests>=2.32,<3", "Pillow>=10.4,<14", "beautifulsoup4>=4.12,<5"]
 
 [project.optional-dependencies]
 test = []  # Tests use the Python standard library's unittest.
+svg = ["resvg_py>=0.5,<0.6"]  # Packaged wheels; no Cairo/GTK or separate system runtime.
 
 [project.scripts]
 tag-logos = "tag_logo_bank.cli:main"

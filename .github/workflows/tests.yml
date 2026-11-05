@@ -1,8 +1,10 @@
-name: Offline regression tests
+name: Hybrid logo tests and public pilot
 on: [push, pull_request]
 jobs:
   tests:
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -15,5 +17,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install -e .
+      - run: python -m pip install --only-binary=resvg_py -e ".[svg]"
       - run: python -m unittest discover -s tests -v
+      - name: Actual public 15-company retrieval (no mocks)
+        if: always() && github.event_name == 'pull_request'
+        run: python examples/live_pilot.py pilot-output
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: public-pilot-${{ matrix.os }}
+          path: |
+            pilot-output/report.json
+            pilot-output/contact-sheet.png
+            pilot-output/public-logos.xlsx
+            pilot-output/public-logos_logos/*.png
+          retention-days: 7
