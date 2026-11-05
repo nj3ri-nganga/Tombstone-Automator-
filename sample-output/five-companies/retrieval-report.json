@@ -1,0 +1,38 @@
+{
+  "input_preserved": true,
+  "logo_rows": 5,
+  "embedded_images": 0,
+  "media": [],
+  "results": [
+    {
+      "company": "Microsoft",
+      "website": "microsoft.com",
+      "status": "ERROR",
+      "reason": "[Errno -3] Temporary failure in name resolution"
+    },
+    {
+      "company": "Apple",
+      "website": "apple.com",
+      "status": "ERROR",
+      "reason": "[Errno -3] Temporary failure in name resolution"
+    },
+    {
+      "company": "NVIDIA",
+      "website": "nvidia.com",
+      "status": "ERROR",
+      "reason": "[Errno -3] Temporary failure in name resolution"
+    },
+    {
+      "company": "Salesforce",
+      "website": "salesforce.com",
+      "status": "ERROR",
+      "reason": "[Errno -3] Temporary failure in name resolution"
+    },
+    {
+      "company": "Adobe",
+      "website": "adobe.com",
+      "status": "ERROR",
+      "reason": "[Errno -3] Temporary failure in name resolution"
+    }
+  ]
+}
