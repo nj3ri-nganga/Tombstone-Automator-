@@ -21,9 +21,9 @@ its wheel. It avoids separately installed native libraries. If no wheel is
 available, leave SVG support off rather than building/installing a system stack;
 the tool continues trying raster candidates. Before conversion a bounded XML/CSS
 subset rejects scripts, events, entities/internal subsets, external resources,
-embedded images, unknown DTDs and cyclic/expanding references. Safe presentation
+external images, unknown DTDs and cyclic/expanding references. Safe presentation
 CSS is expanded; comments and the recognized SVG 1.1 public DOCTYPE are removed
-without fetching a DTD. System fonts are disabled. Unsupported SVG is a diagnostic
+without fetching a DTD. Embedded base64 PNG/JPEG/WebP images are decoded with raster size/visibility checks and normalized to PNG before rendering; nested SVG/data-document images are forbidden. System fonts are disabled. Unsupported SVG is a diagnostic
 failure, never silently accepted. The existing strict preflight is reused rather
 than implementing a new renderer.
 

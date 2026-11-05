@@ -60,7 +60,7 @@ class Hybrid:
         except ValueError as error:
             return Logo(status='ERROR', detail=f'Invalid verified website: {error}')
         key = hashlib.sha256(json.dumps([normalized_name(company), site, aliases, self.use_api,
-                                       self.web_search, self.search_domains, 'hybrid-v1']).encode()).hexdigest()
+                                       self.web_search, self.search_domains, 'hybrid-v2']).encode()).hexdigest()
         cached = self.http.db.execute('SELECT metadata,png,original,expires FROM logos WHERE key=?', (key,)).fetchone()
         if cached and cached[3] > self.http.clock() and not self.http.refresh:
             result = Logo(**json.loads(cached[0]), png=cached[1], downloaded_png=cached[2])

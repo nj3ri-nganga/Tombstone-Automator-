@@ -4,6 +4,7 @@ This is not a general SVG/CSS implementation. Unsupported content needs a verifi
 raster export. No scripts, external resources, XML entities or dynamic CSS survive.
 """
 import re
+import base64
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 
@@ -13,7 +14,7 @@ XLINK_NS = 'http://www.w3.org/1999/xlink'
 XML_NS = 'http://www.w3.org/XML/1998/namespace'
 ELEMENTS = {'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline',
             'polygon', 'defs', 'clipPath', 'mask', 'linearGradient',
-            'radialGradient', 'stop', 'title', 'desc', 'use', 'style', 'metadata'}
+            'radialGradient', 'stop', 'title', 'desc', 'use', 'style', 'metadata', 'image'}
 PAINT = {'fill', 'stroke', 'stop-color'}
 NUMERIC = {'opacity', 'fill-opacity', 'stroke-opacity', 'stop-opacity',
            'stroke-width', 'stroke-miterlimit', 'stroke-dashoffset'}
@@ -148,7 +149,16 @@ def sanitize_svg(data):
             if attr == 'style':
                 declarations(value)
             elif attr == 'href':
-                if not re.fullmatch(r'#[A-Za-z_][\w.-]*', value):
+                if tag == 'image':
+                    match = re.fullmatch(r'data:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\s]+)', value)
+                    if not match:
+                        raise ValueError('SVG images must be embedded raster data, never external resources')
+                    raw = base64.b64decode(re.sub(r'\s', '', match[1]), validate=True)
+                    from .logos import verify_image
+                    png, _, _ = verify_image(raw)
+                    node.set(key, 'data:image/png;base64,' + base64.b64encode(png).decode('ascii'))
+                    notes.append('embedded raster validated and normalized to PNG')
+                elif not re.fullmatch(r'#[A-Za-z_][\w.-]*', value):
                     raise ValueError('SVG external references are forbidden')
             elif attr in PRESENTATION:
                 safe_presentation(attr, value)
@@ -211,7 +221,7 @@ def sanitize_svg(data):
         targets = list(node)
         for key, value in node.attrib.items():
             references = []
-            if local_name(key) == 'href':
+            if local_name(key) == 'href' and value.startswith('#'):
                 references.append(value)
             references.extend(match[1] for match in LOCAL_URL.finditer(value))
             for reference in references:

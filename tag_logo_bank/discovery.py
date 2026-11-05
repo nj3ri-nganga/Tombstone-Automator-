@@ -5,6 +5,7 @@ import json
 import math
 import re
 import xml.etree.ElementTree as ET
+from PIL import Image
 from urllib.parse import urljoin, urlsplit
 
 from .api import normalized_name
@@ -81,9 +82,17 @@ def discover(html, page, company, aliases=()):
         if re.search(r'partner|sponsor|client-logos|carrier-logos', context, re.I):
             continue
         logo_hint = 'logo' in (label + location).lower()
-        name_matches = identity(company, label + ' ' + location, aliases)
+        # Never treat the old domain name in an absolute image URL as evidence
+        # that a renamed/acquired company's current header is the historical mark.
+        filenames = ' '.join(urlsplit(img.get(k, '')).path.rsplit('/', 1)[-1]
+                             for k in ('src', 'data-src', 'data-lazy-src'))
+        display_label = ' '.join(str(img.get(k, '')) for k in ('alt', 'title', 'aria-label'))
+        alt = img.get('alt', '').strip()
         generic = not normalized_name(img.get('alt', '')) or normalized_name(img.get('alt', '')) in {'logo', 'home', 'company logo'}
         partial = normalized_name(img.get('alt', '')) in normalized_name(company).split()
+        if not generic and not identity(company, display_label, aliases) and not (page_matches and partial):
+            continue
+        name_matches = identity(company, display_label, aliases) or (page_matches and identity(company, filenames, aliases))
         if not (name_matches or (page_matches and logo_hint and (generic or partial))):
             continue
         if not logo_hint and not (name_matches and img.find_parent(['header', 'nav'])):
@@ -174,6 +183,6 @@ def official_logo(company, website, http, aliases=()):
                         width, height, hashlib.sha256(png).hexdigest(), png, domain, candidate.method)
         except RateLimited:
             raise
-        except (OSError, ValueError, ET.ParseError) as error:
+        except (OSError, ValueError, ET.ParseError, Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
             errors.append(f'{candidate.method} {candidate.value[:250]}: {type(error).__name__}: {error}')
     return Logo(status='NOT_FOUND', page=response.url, detail='; '.join(errors))

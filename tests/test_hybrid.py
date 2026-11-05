@@ -190,11 +190,22 @@ class DiscoveryTests(unittest.TestCase):
             self.assertTrue(image_bytes(png(fmt))[0].startswith(b'\x89PNG'))
 
     def test_king_rebrand_does_not_silently_become_risk_partners(self):
-        html = b'<title>King Risk Partners</title><header><img alt="King Risk Partners logo" src="/king-risk-logo.png"></header>'
+        html = b'<title>King Risk Partners</title><header><img alt="King Risk Partners logo" src="https://www.king-insurance.com/King-Risk-Partners-New-Logo.svg"></header>'
         self.assertEqual(discover(html, 'https://www.king-insurance.com/', 'King Insurance')[0], [])
 
 
 class SVGTests(unittest.TestCase):
+    def test_embedded_raster_is_validated_without_external_resources(self):
+        import base64
+        from tag_logo_bank.svg import sanitize_svg
+        encoded = base64.b64encode(png()).decode()
+        safe, notes = sanitize_svg(f'<svg><image width="240" height="90" href="data:image/png;base64,{encoded}"/></svg>'.encode())
+        self.assertIn(b'data:image/png;base64,', safe)
+        self.assertTrue(any('embedded raster validated' in note for note in notes))
+        for value in ('https://evil.com/p.png', 'file:///tmp/logo.png',
+                      'data:image/svg+xml;base64,PHN2Zy8+', 'data:image/png;base64,YmFk'):
+            with self.assertRaises((ValueError, OSError)):
+                sanitize_svg(f'<svg><image href="{value}"/></svg>'.encode())
     def test_unsafe_svg_rejected_without_any_renderer(self):
         from tag_logo_bank.svg import sanitize_svg
         for data in [b'<!DOCTYPE svg [<!ENTITY x "red">]><svg/>', b'<svg><script/></svg>',

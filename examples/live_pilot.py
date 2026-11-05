@@ -1,5 +1,6 @@
 """Public 15-company live retrieval only. No mock routes or confidential workbook."""
 import json
+import base64
 from pathlib import Path
 import sys
 from io import BytesIO
@@ -58,6 +59,13 @@ def main():
     summary = {'utc': datetime.now(timezone.utc).isoformat(), 'counts': counts, 'companies': report}
     (destination / 'report.json').write_text(json.dumps(summary, indent=2), encoding='utf-8')
     canvas.save(destination / 'contact-sheet.png')
+    preview = canvas.copy()
+    preview.thumbnail((800, 1500))
+    stream = BytesIO()
+    preview.save(stream, format='PNG', optimize=True)
+    # Public fixture only: make the actual retrieved artwork reviewable when the
+    # Codex executor cannot download binary artifacts through its blocked proxy.
+    print('PUBLIC_PILOT_PREVIEW_BASE64=' + base64.b64encode(stream.getvalue()).decode())
     print(json.dumps(summary, indent=2))
     wb.close()
 
