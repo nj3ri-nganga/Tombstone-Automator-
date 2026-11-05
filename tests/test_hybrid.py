@@ -154,7 +154,7 @@ class NetworkTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec('bs4'), 'BeautifulSoup installed in Windows/Linux CI')
 class DiscoveryTests(unittest.TestCase):
     def test_abbreviated_hub_logo_requires_matching_page_brand(self):
-        html = b'<title>Insurance Brokers | HUB International</title><meta property="og:site_name" content="hub-international"><header><img alt="HUB Logo" src="https://cdn.com/hash.svg"></header>'
+        html = b'<title>Insurance Brokers | HUB International</title><meta property="og:site_name" content="hub-international"><div class="navigation-main__logoMarkLight"><img alt="HUB Logo_H_Full Color_RGB" src="https://cdn.com/hash.svg"></div>'
         self.assertTrue(discover(html, 'https://www.hubinternational.com/', 'HUB International')[0])
         self.assertEqual(discover(html.replace(b'hub-international', b'acquirer'), 'https://www.hubinternational.com/', 'HUB International')[0], [])
 

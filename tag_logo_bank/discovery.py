@@ -89,7 +89,9 @@ def discover(html, page, company, aliases=()):
         display_label = ' '.join(str(img.get(k, '')) for k in ('alt', 'title', 'aria-label'))
         alt = img.get('alt', '').strip()
         generic = not normalized_name(img.get('alt', '')) or normalized_name(img.get('alt', '')) in {'logo', 'home', 'company logo'}
-        short_brand = re.sub(r'\b(?:logo|home)\b', '', normalized_name(img.get('alt', ''))).strip()
+        # Export labels may be "HUB Logo_H_Full Color_RGB". The prefix can
+        # corroborate an abbreviation only when the full page brand matches.
+        short_brand = re.split(r'\b(?:logo|home)\b', normalized_name(img.get('alt', '')), maxsplit=1)[0].strip()
         partial = bool(short_brand) and short_brand in normalized_name(company).split()
         if not generic and not identity(company, display_label, aliases) and not (page_matches and partial):
             continue
