@@ -1,0 +1,33 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Transaction data and generated workbook outputs
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.csv
+
+# Local or downloaded logos and generated archives
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.ico
+*.svg
+*.zip
+
+# Local runtime state and credentials
+work/
+output/
+logos/
+.env
+.env.*
+*.log
+*.tmp
+~$*

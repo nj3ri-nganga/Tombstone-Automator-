@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tag-logo-bank"
+version = "1.0.0"
+description = "Auditable Excel logo bank for TAG transaction tombstones"
+requires-python = ">=3.10"
+dependencies = ["openpyxl>=3.1,<4", "beautifulsoup4>=4.12,<5", "requests>=2.32,<3", "Pillow>=10.4,<14"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
+[project.scripts]
+tag-logos = "tag_logo_bank.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["tag_logo_bank*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
