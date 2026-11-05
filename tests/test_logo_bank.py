@@ -154,11 +154,18 @@ class WorkbookTests(unittest.TestCase):
                 self.assertIn('Error:', error.getvalue())
                 self.assertFalse(output.exists())
             config = folder / 'override.json'
+            expected_logo = folder / 'official verified.png'
+            expected_logo.write_bytes(png())
             config.write_text(json.dumps({'Adobe': {'logo_path': 'official verified.png'}}), encoding='utf-8-sig')
             with patch.object(sys, 'argv', ['tag-logos', 'in.xlsx', 'out.xlsx', '--overrides', str(config)]), \
                  patch('tag_logo_bank.cli.build_logo_bank', return_value={}) as build, patch('sys.stdout', new_callable=StringIO):
                 self.assertEqual(main(), 0)
-                self.assertEqual(Path(build.call_args.kwargs['overrides']['Adobe']['logo_path']), folder / 'official verified.png')
+                actual_logo = Path(build.call_args.kwargs['overrides']['Adobe']['logo_path'])
+                self.assertTrue(actual_logo.is_absolute())
+                # Windows temp paths may contain an 8.3 alias (RUNNER~1), while
+                # the CLI correctly resolves it to its long-form spelling.
+                self.assertEqual(actual_logo, expected_logo.resolve(strict=True))
+                self.assertTrue(actual_logo.samefile(expected_logo))
 
     def test_optional_manual_approval_and_no_api_calls(self):
         import hashlib
