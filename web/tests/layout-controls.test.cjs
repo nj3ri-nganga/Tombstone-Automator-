@@ -8,6 +8,12 @@ const dom=new JSDOM(html,{url:'https://studio.test',runScripts:'dangerously',vir
 const w=dom.window,d=w.document;
 async function run(){
 w.eval(fs.readFileSync('dist/app.js','utf8'));
+const border=await import('../border-asset.js');
+const svg=d.querySelector('#artwork svg');
+assert.equal(svg.getAttribute('viewBox'),'0 0 459 609');
+assert.equal(svg.querySelector('image[aria-label="Original border"]').getAttribute('href'),border.borderImage);
+assert.ok(svg.querySelector('g[transform="translate(0 17.625) scale(0.95625)"]'));
+assert.equal(new w.DOMParser().parseFromString(svg.outerHTML,'image/svg+xml').querySelectorAll('parsererror').length,0);
 const $=id=>d.getElementById(id);
 const dispatch=(id,event='input')=>$(id).dispatchEvent(new w.Event(event,{bubbles:true}));
 const save=async()=>{$('dealForm').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await new Promise(r=>setTimeout(r,0))};
