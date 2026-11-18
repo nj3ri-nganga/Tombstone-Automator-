@@ -13,3 +13,16 @@ claims. The full TAG workbook is not present; no confidential data is committed.
 
 See README.md for sheet preservation, same-domain redirect rules, constrained
 optional web search, 429 cooldowns and local resume/cache behavior.
+
+## Tombstone Studio website
+
+For the browser editor, use the `web/` folder and Node.js 24+:
+
+```sh
+cd web
+npm ci
+npm test
+npm run dev
+```
+
+See [web/README.md](web/README.md). Its source is separate from the Python tool. User logos, deals and settings remain browser-local; they are not transferred through GitHub. Merging code does not automatically update the current hosted Site.

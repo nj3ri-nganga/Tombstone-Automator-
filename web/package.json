@@ -1,0 +1,27 @@
+{
+  "name": "tombstone-studio",
+  "version": "1.0.0",
+  "description": "Browser-local transaction tombstone editor with Excel logo import, layout controls and PNG/PDF export.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --serve",
+    "test": "npm run build && node --test tests/workbook-images.test.mjs tests/border.test.mjs && node tests/workspace.test.cjs && node tests/layout-controls.test.cjs && node tests/storage.test.cjs"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "module",
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.8",
+    "jsdom": "^31.0.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  }
+}
