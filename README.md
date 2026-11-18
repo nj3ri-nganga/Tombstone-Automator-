@@ -173,3 +173,7 @@ King Insurance uses king-insurance.com, which currently presents King Risk
 Partners: a different current brand is not automatically approved as the
 historical King Insurance logo. The remaining ten domains are exactly those
 supplied by the user. Redirect/rebrand cases are reported rather than relabeled.
+
+## Tombstone Studio website
+
+The browser tombstone generator is in [`web/`](web/README.md), alongside this Python logo-recovery tool. See its README for Codex setup, development, tests, browser-local data and deployment behavior.
