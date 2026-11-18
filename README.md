@@ -1,5 +1,9 @@
 # TAG Logo Bank — hybrid recovery
 
+> **Tombstone Studio** · [Open the hosted site](https://tag-tombstone-studio.epicshrew17.chatgpt.site) and sign in with the account that has site access.
+>
+> To develop the website in your connected Codex project, select `feat/tombstone-studio-web` and follow the [web setup instructions](https://github.com/nj3ri-nganga/Tombstone-Automator-/blob/feat/tombstone-studio-web/web/README.md).
+
 Fill empty company logo cells using an optional LogoAPI.sh lookup, then the
 company's verified official website. Preserve the source workbook and existing
 Logos rows, notes, statuses, original logos and occupied Current Logo cells.
