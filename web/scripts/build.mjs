@@ -1,10 +1,10 @@
 import {build, context} from 'esbuild';
-import {copyFile, mkdir} from 'node:fs/promises';
+import {copyFile, mkdir, cp} from 'node:fs/promises';
 import {watch} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 process.chdir(fileURLToPath(new URL('../',import.meta.url)));
 await mkdir('dist',{recursive:true});
-const copyAssets=()=>Promise.all(['index.html','style.css'].map(name=>copyFile(name,`dist/${name}`)));
+const copyAssets=()=>Promise.all([...['index.html','style.css'].map(name=>copyFile(name,`dist/${name}`)),cp('assets','dist/assets',{recursive:true})]);
 await copyAssets();
 const options={entryPoints:['app-source.js'],bundle:true,minify:true,outfile:'dist/app.js',logLevel:'info'};
 if(process.argv.includes('--serve')){
